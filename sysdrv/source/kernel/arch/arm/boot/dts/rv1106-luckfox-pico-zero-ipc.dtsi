@@ -219,12 +219,14 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c4m2_xfer>;
 
-	tc358743: tc358743@0 {
+	tc358743: tc358743@0f {
 		compatible = "toshiba,tc358743";
-		reg = <0x0>;
+		reg = <0x0f>;
 		clocks = <&out_osc_hdmi>;
 		clock-names = "refclk";
 		reset-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_HIGH>;
 
 		port {
 			tc358743_out: endpoint {
@@ -256,7 +258,7 @@
 				};
 		};
 	};
-	
+
 	imx415: imx415@37 {
 		compatible = "sony,imx415";
 		status = "okay";
