@@ -103,6 +103,13 @@
 		#clock-cells = <0>;
 	};
 
+	out_osc_hdmi: out-osc-hdmi {
+		compatible = "fixed-clock";
+		clock-output-names = "out-osc-hdmi";
+		clock-frequency = <27000000>;
+		#clock-cells = <0>;
+	};
+
 	cam_ircut0: cam_ircut {
 		status = "okay";
 		compatible = "rockchip,ircut";
@@ -186,6 +193,12 @@
 				data-lanes = <1 2 3 4>;
 			};
 
+			//tc358743
+			csi_dphy_input2: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&tc358743_out>;
+				data-lanes = <1 2>;
+			};
 		};
 
 		port@1 {
@@ -205,6 +218,24 @@
 	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c4m2_xfer>;
+
+	tc358743: tc358743@0 {
+		compatible = "toshiba,tc358743";
+		reg = <0x0>;
+		clocks = <&out_osc_hdmi>;
+		clock-names = "refclk";
+		reset-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
+
+		port {
+			tc358743_out: endpoint {
+				remote-endpoint = <&csi_dphy_input2>;
+				data-lanes = <1 2>;
+				clock-lanes = <0>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <297000000>;
+			};
+		};
+	};
 
 	mia1321: mia1321@60 {
 		compatible = "imagedesign,mia1321";
