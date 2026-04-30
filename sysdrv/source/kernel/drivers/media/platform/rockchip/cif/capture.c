@@ -512,18 +512,22 @@ static const struct cif_input_fmt in_fmts[] = {
 	}, {
 		.mbus_code	= MEDIA_BUS_FMT_RGB888_1X24,
 		.csi_fmt_val	= CSI_WRDDR_TYPE_RGB888,
+		.fmt_type	= CIF_FMT_TYPE_RAW,
 		.field		= V4L2_FIELD_NONE,
 	}, {
 		.mbus_code	= MEDIA_BUS_FMT_BGR888_1X24,
 		.csi_fmt_val	= CSI_WRDDR_TYPE_RGB888,
+		.fmt_type	= CIF_FMT_TYPE_RAW,
 		.field		= V4L2_FIELD_NONE,
 	}, {
 		.mbus_code	= MEDIA_BUS_FMT_GBR888_1X24,
 		.csi_fmt_val	= CSI_WRDDR_TYPE_RGB888,
+		.fmt_type	= CIF_FMT_TYPE_RAW,
 		.field		= V4L2_FIELD_NONE,
 	}, {
 		.mbus_code	= MEDIA_BUS_FMT_RGB565_1X16,
 		.csi_fmt_val	= CSI_WRDDR_TYPE_RGB565,
+		.fmt_type	= CIF_FMT_TYPE_RAW,
 		.field		= V4L2_FIELD_NONE,
 	}, {
 		.mbus_code	= MEDIA_BUS_FMT_Y8_1X8,

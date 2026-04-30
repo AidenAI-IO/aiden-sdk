@@ -1610,6 +1610,19 @@ static int tc358743_query_dv_timings(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int tc358743_g_frame_interval(struct v4l2_subdev *sd,
+		struct v4l2_subdev_frame_interval *fi)
+{
+	struct tc358743_state *state = to_state(sd);
+
+	if (fi->pad != 0)
+		return -EINVAL;
+
+	fi->interval = v4l2_calc_timeperframe(&state->timings);
+
+	return 0;
+}
+
 static int tc358743_dv_timings_cap(struct v4l2_subdev *sd,
 		struct v4l2_dv_timings_cap *cap)
 {
@@ -1679,6 +1692,23 @@ static int tc358743_enum_mbus_code(struct v4l2_subdev *sd,
 	default:
 		return -EINVAL;
 	}
+	return 0;
+}
+
+static int tc358743_enum_frame_interval(struct v4l2_subdev *sd,
+		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_frame_interval_enum *fie)
+{
+	struct tc358743_state *state = to_state(sd);
+
+	if (fie->pad != 0 || fie->index != 0)
+		return -EINVAL;
+
+	fie->code = state->mbus_fmt_code;
+	fie->width = state->timings.bt.width;
+	fie->height = state->timings.bt.height;
+	fie->interval = v4l2_calc_timeperframe(&state->timings);
+
 	return 0;
 }
 
@@ -1856,11 +1886,13 @@ static const struct v4l2_subdev_video_ops tc358743_video_ops = {
 	.s_dv_timings = tc358743_s_dv_timings,
 	.g_dv_timings = tc358743_g_dv_timings,
 	.query_dv_timings = tc358743_query_dv_timings,
+	.g_frame_interval = tc358743_g_frame_interval,
 	.s_stream = tc358743_s_stream,
 };
 
 static const struct v4l2_subdev_pad_ops tc358743_pad_ops = {
 	.enum_mbus_code = tc358743_enum_mbus_code,
+	.enum_frame_interval = tc358743_enum_frame_interval,
 	.set_fmt = tc358743_set_fmt,
 	.get_fmt = tc358743_get_fmt,
 	.get_edid = tc358743_g_edid,
