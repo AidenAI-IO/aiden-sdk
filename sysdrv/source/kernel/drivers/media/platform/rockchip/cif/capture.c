@@ -5728,9 +5728,10 @@ int rkcif_update_sensor_info(struct rkcif_stream *stream)
 	ret = v4l2_subdev_call(sensor->sd, pad, get_mbus_config,
 			       0, &sensor->mbus);
 	if (ret && ret != -ENOIOCTLCMD) {
-		v4l2_err(&stream->cifdev->v4l2_dev,
-			 "%s: get remote %s mbus failed!\n", __func__, sensor->sd->name);
-		return ret;
+		v4l2_dbg(1, rkcif_debug, &stream->cifdev->v4l2_dev,
+			 "%s: get remote %s mbus failed (ret=%d), will try terminal sensor\n",
+			 __func__, sensor->sd->name, ret);
+		/* DPHY may fail if terminal sensor is not ready, will get config from terminal sensor later */
 	}
 
 	stream->cifdev->active_sensor = sensor;
@@ -5741,10 +5742,20 @@ int rkcif_update_sensor_info(struct rkcif_stream *stream)
 		ret = v4l2_subdev_call(terminal_sensor->sd, pad, get_mbus_config,
 				       0, &terminal_sensor->mbus);
 		if (ret && ret != -ENOIOCTLCMD) {
-			v4l2_err(&stream->cifdev->v4l2_dev,
-				 "%s: get terminal %s mbus failed!\n",
-				 __func__, terminal_sensor->sd->name);
-			return ret;
+			v4l2_dbg(1, rkcif_debug, &stream->cifdev->v4l2_dev,
+				 "%s: get terminal %s mbus failed (ret=%d), using default CSI2 config\n",
+				 __func__, terminal_sensor->sd->name, ret);
+			if (sensor->mbus.type != 0) {
+				terminal_sensor->mbus = sensor->mbus;
+			} else {
+				terminal_sensor->mbus.type = V4L2_MBUS_CSI2_DPHY;
+				terminal_sensor->mbus.flags = V4L2_MBUS_CSI2_2_LANE |
+							      V4L2_MBUS_CSI2_CHANNEL_0 |
+							      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+			}
+			/* Also update sensor mbus if it was empty */
+			if (sensor->mbus.type == 0)
+				sensor->mbus = terminal_sensor->mbus;
 		}
 		ret = v4l2_subdev_call(terminal_sensor->sd, video,
 				       g_frame_interval, &terminal_sensor->fi);
