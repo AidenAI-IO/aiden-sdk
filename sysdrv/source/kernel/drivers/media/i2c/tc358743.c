@@ -67,6 +67,10 @@ static const struct v4l2_dv_timings_cap tc358743_timings_cap = {
 			V4L2_DV_BT_CAP_CUSTOM)
 };
 
+static const s64 tc358743_link_freq_menu_items[] = {
+	297000000,
+};
+
 struct tc358743_state {
 	struct tc358743_platform_data pdata;
 	struct v4l2_fwnode_bus_mipi_csi2 bus;
@@ -81,6 +85,8 @@ struct tc358743_state {
 	struct v4l2_ctrl *detect_tx_5v_ctrl;
 	struct v4l2_ctrl *audio_sampling_rate_ctrl;
 	struct v4l2_ctrl *audio_present_ctrl;
+	struct v4l2_ctrl *link_freq;
+	struct v4l2_ctrl *pixel_rate;
 
 	struct delayed_work delayed_work_enable_hotplug;
 
@@ -93,6 +99,7 @@ struct tc358743_state {
 	struct v4l2_dv_timings timings;
 	u32 mbus_fmt_code;
 	u8 csi_lanes_in_use;
+	s64 link_freq_value;
 
 	struct gpio_desc *reset_gpio;
 
@@ -106,6 +113,15 @@ static int tc358743_s_ctrl_detect_tx_5v(struct v4l2_subdev *sd);
 static inline struct tc358743_state *to_state(struct v4l2_subdev *sd)
 {
 	return container_of(sd, struct tc358743_state, sd);
+}
+
+static void tc358743_update_mbus_controls(struct tc358743_state *state)
+{
+	if (state->link_freq)
+		__v4l2_ctrl_s_ctrl(state->link_freq, 0);
+	if (state->pixel_rate)
+		__v4l2_ctrl_s_ctrl_int64(state->pixel_rate,
+					 state->timings.bt.pixelclock);
 }
 
 /* --------------- I2C --------------- */
@@ -1543,6 +1559,7 @@ static int tc358743_s_dv_timings(struct v4l2_subdev *sd,
 	}
 
 	state->timings = *timings;
+	tc358743_update_mbus_controls(state);
 
 	enable_stream(sd, false);
 	tc358743_set_pll(sd);
@@ -1981,6 +1998,7 @@ static int tc358743_probe_of(struct tc358743_state *state)
 	/* The CSI speed per lane is refclk / pll_prd * pll_fbd */
 	state->pdata.pll_fbd = bps_pr_lane /
 			       state->pdata.refclk_hz * state->pdata.pll_prd;
+	state->link_freq_value = endpoint.link_frequencies[0];
 
 	/*
 	 * FIXME: These timings are from REF_02 for 594 Mbps per lane (297 MHz
@@ -2076,7 +2094,14 @@ static int tc358743_probe(struct i2c_client *client)
 	}
 
 	/* control handlers */
-	v4l2_ctrl_handler_init(&state->hdl, 3);
+	v4l2_ctrl_handler_init(&state->hdl, 5);
+
+	state->link_freq = v4l2_ctrl_new_int_menu(&state->hdl, NULL,
+			V4L2_CID_LINK_FREQ, 0, 0, tc358743_link_freq_menu_items);
+
+	state->pixel_rate = v4l2_ctrl_new_std(&state->hdl, NULL,
+			V4L2_CID_PIXEL_RATE, 0, tc358743_timings_cap.bt.max_pixelclock,
+			1, default_timing.bt.pixelclock);
 
 	state->detect_tx_5v_ctrl = v4l2_ctrl_new_std(&state->hdl, NULL,
 			V4L2_CID_DV_RX_POWER_PRESENT, 0, 1, 0, 0);
@@ -2131,6 +2156,7 @@ static int tc358743_probe(struct i2c_client *client)
 	tc358743_initial_setup(sd);
 
 	tc358743_s_dv_timings(sd, &default_timing);
+	tc358743_update_mbus_controls(state);
 
 	tc358743_set_csi_color_space(sd);
 
