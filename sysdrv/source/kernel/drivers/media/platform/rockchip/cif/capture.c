@@ -759,7 +759,8 @@ static void get_remote_terminal_sensor(struct rkcif_stream *stream,
 
 	media_graph_walk_start(&graph, entity);
 	while ((entity = media_graph_walk_next(&graph))) {
-		if (entity->function == MEDIA_ENT_F_CAM_SENSOR)
+		if (entity->function == MEDIA_ENT_F_CAM_SENSOR ||
+		    entity->function == MEDIA_ENT_F_VID_IF_BRIDGE)
 			break;
 	}
 	mutex_unlock(&mdev->graph_mutex);
@@ -5747,11 +5748,12 @@ int rkcif_update_sensor_info(struct rkcif_stream *stream)
 		}
 		ret = v4l2_subdev_call(terminal_sensor->sd, video,
 				       g_frame_interval, &terminal_sensor->fi);
-		if (ret) {
-			v4l2_err(&stream->cifdev->v4l2_dev,
-				 "%s: get terminal %s g_frame_interval failed!\n",
+		if (ret && ret != -ENOIOCTLCMD) {
+			v4l2_dbg(1, rkcif_debug, &stream->cifdev->v4l2_dev,
+				 "%s: get terminal %s g_frame_interval failed, not fatal for bridge devices\n",
 				 __func__, terminal_sensor->sd->name);
-			return ret;
+			terminal_sensor->fi.interval.numerator = 1;
+			terminal_sensor->fi.interval.denominator = 60;
 		}
 		if (v4l2_subdev_call(terminal_sensor->sd, core, ioctl, RKMODULE_GET_CSI_DSI_INFO,
 					&terminal_sensor->dsi_input_en)) {
