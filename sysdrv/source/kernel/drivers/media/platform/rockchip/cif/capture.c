@@ -5732,6 +5732,7 @@ int rkcif_update_sensor_info(struct rkcif_stream *stream)
 			 "%s: get remote %s mbus failed (ret=%d), will try terminal sensor\n",
 			 __func__, sensor->sd->name, ret);
 		/* DPHY may fail if terminal sensor is not ready, will get config from terminal sensor later */
+		ret = 0;
 	}
 
 	stream->cifdev->active_sensor = sensor;
@@ -5756,15 +5757,17 @@ int rkcif_update_sensor_info(struct rkcif_stream *stream)
 			/* Also update sensor mbus if it was empty */
 			if (sensor->mbus.type == 0)
 				sensor->mbus = terminal_sensor->mbus;
+			ret = 0;
 		}
 		ret = v4l2_subdev_call(terminal_sensor->sd, video,
 				       g_frame_interval, &terminal_sensor->fi);
-		if (ret && ret != -ENOIOCTLCMD) {
+		if (ret) {
 			v4l2_dbg(1, rkcif_debug, &stream->cifdev->v4l2_dev,
-				 "%s: get terminal %s g_frame_interval failed, not fatal for bridge devices\n",
-				 __func__, terminal_sensor->sd->name);
+				 "%s: get terminal %s g_frame_interval failed (ret=%d), default to 60fps for bridge devices\n",
+				 __func__, terminal_sensor->sd->name, ret);
 			terminal_sensor->fi.interval.numerator = 1;
 			terminal_sensor->fi.interval.denominator = 60;
+			ret = 0;
 		}
 		if (v4l2_subdev_call(terminal_sensor->sd, core, ioctl, RKMODULE_GET_CSI_DSI_INFO,
 					&terminal_sensor->dsi_input_en)) {
