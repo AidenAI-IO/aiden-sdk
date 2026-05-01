@@ -58,8 +58,13 @@ static const struct v4l2_dv_timings_cap tc358743_timings_cap = {
 	.type = V4L2_DV_BT_656_1120,
 	/* keep this initialization for compatibility with GCC < 4.4.6 */
 	.reserved = { 0 },
-	/* Pixel clock from REF_01 p. 20. Min/max height/width are unknown */
-	V4L2_INIT_BT_TIMINGS(640, 1920, 350, 1200, 13000000, 165000000,
+	/*
+	 * Pixel clock from REF_01 p. 20.
+	 * We have confirmed the bridge can detect custom portrait timings such as
+	 * 552x1200p30, so keep the lower bound permissive instead of rejecting
+	 * narrow custom modes during query/set_dv_timings.
+	 */
+	V4L2_INIT_BT_TIMINGS(320, 1920, 350, 1200, 13000000, 165000000,
 			V4L2_DV_BT_STD_CEA861 | V4L2_DV_BT_STD_DMT |
 			V4L2_DV_BT_STD_GTF | V4L2_DV_BT_STD_CVT,
 			V4L2_DV_BT_CAP_PROGRESSIVE |
@@ -67,9 +72,7 @@ static const struct v4l2_dv_timings_cap tc358743_timings_cap = {
 			V4L2_DV_BT_CAP_CUSTOM)
 };
 
-static const s64 tc358743_link_freq_menu_items[] = {
-	297000000,
-};
+static s64 tc358743_link_freq_menu_item = 297000000;
 
 struct tc358743_state {
 	struct tc358743_platform_data pdata;
@@ -537,12 +540,15 @@ static inline void enable_stream(struct v4l2_subdev *sd, bool enable)
 			__func__, enable ? "en" : "dis");
 
 	if (enable) {
+		v4l2_info(sd, "%s: enable\n", __func__);
 		/* It is critical for CSI receiver to see lane transition
 		 * LP11->HS. Set to non-continuous mode to enable clock lane
-		 * LP11 state. */
+		 * LP11 state. Must wait for LP11 transition to complete. */
 		i2c_wr32(sd, TXOPTIONCNTRL, 0);
+		usleep_range(100, 200);
 		/* Set to continuous mode to trigger LP11->HS transition */
 		i2c_wr32(sd, TXOPTIONCNTRL, MASK_CONTCLKMODE);
+		usleep_range(100, 200);
 		/* Unmute video */
 		i2c_wr8(sd, VI_MUTE, MASK_AUTO_MUTE);
 	} else {
@@ -552,8 +558,8 @@ static inline void enable_stream(struct v4l2_subdev *sd, bool enable)
 	}
 
 	mutex_lock(&state->confctl_mutex);
-	i2c_wr16_and_or(sd, CONFCTL, ~(MASK_VBUFEN | MASK_ABUFEN),
-			enable ? (MASK_VBUFEN | MASK_ABUFEN) : 0x0);
+	i2c_wr16_and_or(sd, CONFCTL, ~(MASK_VBUFEN | MASK_ABUFEN | MASK_INFRMEN),
+			enable ? (MASK_VBUFEN | MASK_ABUFEN | MASK_INFRMEN) : 0x0);
 	mutex_unlock(&state->confctl_mutex);
 }
 
@@ -679,17 +685,38 @@ static void tc358743_set_csi_color_space(struct v4l2_subdev *sd)
 	}
 }
 
+static u32 tc358743_bits_per_pixel(u32 mbus_fmt_code)
+{
+	switch (mbus_fmt_code) {
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+		return 16;
+	case MEDIA_BUS_FMT_RGB888_1X24:
+	default:
+		return 24;
+	}
+}
+
+static u64 tc358743_active_bps(struct tc358743_state *state, u32 mbus_fmt_code)
+{
+	struct v4l2_bt_timings *bt = &state->timings.bt;
+
+	return (u64)bt->width * bt->height * fps(bt) *
+	       tc358743_bits_per_pixel(mbus_fmt_code);
+}
+
+static u64 tc358743_link_capacity_bps(struct tc358743_state *state)
+{
+	return (u64)state->bus.num_data_lanes * 2 * state->link_freq_value;
+}
+
 static unsigned tc358743_num_csi_lanes_needed(struct v4l2_subdev *sd)
 {
 	struct tc358743_state *state = to_state(sd);
-	struct v4l2_bt_timings *bt = &state->timings.bt;
 	struct tc358743_platform_data *pdata = &state->pdata;
-	u32 bits_pr_pixel =
-		(state->mbus_fmt_code == MEDIA_BUS_FMT_UYVY8_1X16) ?  16 : 24;
-	u32 bps = bt->width * bt->height * fps(bt) * bits_pr_pixel;
+	u64 bps = tc358743_active_bps(state, state->mbus_fmt_code);
 	u32 bps_pr_lane = (pdata->refclk_hz / pdata->pll_prd) * pdata->pll_fbd;
 
-	return DIV_ROUND_UP(bps, bps_pr_lane);
+	return DIV_ROUND_UP_ULL(bps, bps_pr_lane);
 }
 
 static void tc358743_set_csi(struct v4l2_subdev *sd)
@@ -698,22 +725,43 @@ static void tc358743_set_csi(struct v4l2_subdev *sd)
 	struct tc358743_platform_data *pdata = &state->pdata;
 	unsigned lanes = tc358743_num_csi_lanes_needed(sd);
 
-	v4l2_dbg(3, debug, sd, "%s:\n", __func__);
+	v4l2_info(sd, "%s: lanes=%u, bus=%u, fmt=%dx%d@%u\n",
+		  __func__, lanes, state->bus.num_data_lanes,
+		  state->timings.bt.width, state->timings.bt.height,
+		  fps(&state->timings.bt));
+
+	if (lanes > state->bus.num_data_lanes) {
+		v4l2_info(sd, "%s: capping lanes %u -> %u\n",
+			  __func__, lanes, state->bus.num_data_lanes);
+		lanes = state->bus.num_data_lanes;
+	}
 
 	state->csi_lanes_in_use = lanes;
 
 	tc358743_reset(sd, MASK_CTXRST);
 
-	if (lanes < 1)
-		i2c_wr32(sd, CLW_CNTRL, MASK_CLW_LANEDISABLE);
-	if (lanes < 1)
-		i2c_wr32(sd, D0W_CNTRL, MASK_D0W_LANEDISABLE);
-	if (lanes < 2)
-		i2c_wr32(sd, D1W_CNTRL, MASK_D1W_LANEDISABLE);
-	if (lanes < 3)
-		i2c_wr32(sd, D2W_CNTRL, MASK_D2W_LANEDISABLE);
-	if (lanes < 4)
-		i2c_wr32(sd, D3W_CNTRL, MASK_D3W_LANEDISABLE);
+	/* Enable only lanes from DT data-lanes (1-based → 0-based index) */
+	{
+		int j;
+		bool en[4] = { false, false, false, false };
+		for (j = 0; j < state->bus.num_data_lanes; j++)
+			if (state->bus.data_lanes[j] >= 1 &&
+			    state->bus.data_lanes[j] <= 4)
+				en[state->bus.data_lanes[j] - 1] = true;
+		if (!en[0]) i2c_wr32(sd, D0W_CNTRL, MASK_D0W_LANEDISABLE);
+		if (!en[1]) i2c_wr32(sd, D1W_CNTRL, MASK_D1W_LANEDISABLE);
+		if (!en[2]) i2c_wr32(sd, D2W_CNTRL, MASK_D2W_LANEDISABLE);
+		if (!en[3]) i2c_wr32(sd, D3W_CNTRL, MASK_D3W_LANEDISABLE);
+		v4l2_info(sd, "%s: lanes enabled: D0=%d D1=%d D2=%d D3=%d\n",
+			  __func__, en[0], en[1], en[2], en[3]);
+
+		i2c_wr32(sd, HSTXVREGEN,
+			 MASK_CLM_HSTXVREGEN |
+			 (en[0] ? MASK_D0M_HSTXVREGEN : 0x0) |
+			 (en[1] ? MASK_D1M_HSTXVREGEN : 0x0) |
+			 (en[2] ? MASK_D2M_HSTXVREGEN : 0x0) |
+			 (en[3] ? MASK_D3M_HSTXVREGEN : 0x0));
+	}
 
 	i2c_wr32(sd, LINEINITCNT, pdata->lineinitcnt);
 	i2c_wr32(sd, LPTXTIMECNT, pdata->lptxtimecnt);
@@ -725,17 +773,11 @@ static void tc358743_set_csi(struct v4l2_subdev *sd)
 	i2c_wr32(sd, THS_TRAILCNT, pdata->ths_trailcnt);
 	i2c_wr32(sd, HSTXVREGCNT, pdata->hstxvregcnt);
 
-	i2c_wr32(sd, HSTXVREGEN,
-			((lanes > 0) ? MASK_CLM_HSTXVREGEN : 0x0) |
-			((lanes > 0) ? MASK_D0M_HSTXVREGEN : 0x0) |
-			((lanes > 1) ? MASK_D1M_HSTXVREGEN : 0x0) |
-			((lanes > 2) ? MASK_D2M_HSTXVREGEN : 0x0) |
-			((lanes > 3) ? MASK_D3M_HSTXVREGEN : 0x0));
-
 	i2c_wr32(sd, TXOPTIONCNTRL, (state->bus.flags &
 		 V4L2_MBUS_CSI2_CONTINUOUS_CLOCK) ? MASK_CONTCLKMODE : 0);
 	i2c_wr32(sd, STARTCNTRL, MASK_START);
 	i2c_wr32(sd, CSI_START, MASK_STRT);
+	v4l2_info(sd, "%s: CSI_START, bus_flags=0x%x\n", __func__, state->bus.flags);
 
 	i2c_wr32(sd, CSI_CONFW, MASK_MODE_SET |
 			MASK_ADDRESS_CSI_CONTROL |
@@ -1753,6 +1795,8 @@ static int tc358743_set_fmt(struct v4l2_subdev *sd,
 		struct v4l2_subdev_format *format)
 {
 	struct tc358743_state *state = to_state(sd);
+	u64 active_bps;
+	u64 capacity_bps;
 
 	u32 code = format->format.code; /* is overwritten by get_fmt */
 	int ret = tc358743_get_fmt(sd, cfg, format);
@@ -1767,6 +1811,15 @@ static int tc358743_set_fmt(struct v4l2_subdev *sd,
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 		break;
 	default:
+		return -EINVAL;
+	}
+
+	active_bps = tc358743_active_bps(state, code);
+	capacity_bps = tc358743_link_capacity_bps(state);
+	if (active_bps > capacity_bps) {
+		v4l2_warn(sd,
+			  "rejecting mbus code 0x%x: active bps %llu > link capacity %llu\n",
+			  code, active_bps, capacity_bps);
 		return -EINVAL;
 	}
 
@@ -2028,8 +2081,8 @@ static int tc358743_probe_of(struct tc358743_state *state)
 	}
 
 	/* The CSI speed per lane is refclk / pll_prd * pll_fbd */
-	state->pdata.pll_fbd = bps_pr_lane /
-			       state->pdata.refclk_hz * state->pdata.pll_prd;
+	state->pdata.pll_fbd = DIV_ROUND_CLOSEST(bps_pr_lane * state->pdata.pll_prd,
+						  state->pdata.refclk_hz);
 	state->link_freq_value = endpoint.link_frequencies[0];
 
 	/*
@@ -2128,8 +2181,10 @@ static int tc358743_probe(struct i2c_client *client)
 	/* control handlers */
 	v4l2_ctrl_handler_init(&state->hdl, 5);
 
+	tc358743_link_freq_menu_item = state->link_freq_value;
+
 	state->link_freq = v4l2_ctrl_new_int_menu(&state->hdl, NULL,
-			V4L2_CID_LINK_FREQ, 0, 0, tc358743_link_freq_menu_items);
+			V4L2_CID_LINK_FREQ, 0, 0, &tc358743_link_freq_menu_item);
 
 	state->pixel_rate = v4l2_ctrl_new_std(&state->hdl, NULL,
 			V4L2_CID_PIXEL_RATE, 0, tc358743_timings_cap.bt.max_pixelclock,
@@ -2162,7 +2217,7 @@ static int tc358743_probe(struct i2c_client *client)
 	if (err < 0)
 		goto err_hdl;
 
-	state->mbus_fmt_code = MEDIA_BUS_FMT_RGB888_1X24;
+	state->mbus_fmt_code = MEDIA_BUS_FMT_UYVY8_1X16;
 
 	sd->dev = &client->dev;
 	err = v4l2_async_register_subdev(sd);

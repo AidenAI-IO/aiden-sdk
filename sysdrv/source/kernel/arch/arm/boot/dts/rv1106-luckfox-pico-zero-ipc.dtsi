@@ -197,7 +197,7 @@
 			csi_dphy_input2: endpoint@2 {
 				reg = <2>;
 				remote-endpoint = <&tc358743_out>;
-				data-lanes = <1 2 3 4>;
+				data-lanes = <1 2>;
 			};
 		};
 
@@ -231,10 +231,10 @@
 		port {
 			tc358743_out: endpoint {
 				remote-endpoint = <&csi_dphy_input2>;
-				data-lanes = <1 2 3 4>;
+				data-lanes = <1 2>;
 				clock-lanes = <0>;
 				clock-noncontinuous;
-				link-frequencies = /bits/ 64 <373125000>;
+				link-frequencies = /bits/ 64 <297000000>;
 			};
 		};
 	};

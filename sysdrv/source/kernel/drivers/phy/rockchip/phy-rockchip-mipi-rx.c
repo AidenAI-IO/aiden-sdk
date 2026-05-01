@@ -50,6 +50,11 @@
 #include <media/v4l2-device.h>
 #include <linux/rockchip/cpu.h>
 
+static int hsfreq_override = -1;
+module_param(hsfreq_override, int, 0644);
+MODULE_PARM_DESC(hsfreq_override,
+		 "Override the selected CSI D-PHY hsfreq code (-1 keeps auto)");
+
 /* GRF */
 #define RK1808_GRF_PD_VI_CON_OFFSET	0x0430
 
@@ -1476,6 +1481,16 @@ static int csi_mipidphy_stream_on(struct mipidphy_priv *priv,
 		dev_warn(priv->dev, "data rate: %lld mbps, max support %d mbps",
 			 priv->data_rate_mbps, hsfreq_ranges[i].range_h + 1);
 		hsfreq = hsfreq_ranges[i].cfg_bit;
+	}
+
+	if (hsfreq_override >= 0) {
+		dev_info(priv->dev,
+			 "forcing hsfreq 0x%x (auto 0x%x) for data_rate_mbps %lld\n",
+			 hsfreq_override & 0x7f, hsfreq, priv->data_rate_mbps);
+		hsfreq = hsfreq_override & 0x7f;
+	} else {
+		dev_info(priv->dev, "selected hsfreq 0x%x for data_rate_mbps %lld\n",
+			 hsfreq, priv->data_rate_mbps);
 	}
 
 	csi_mipidphy_wr_ths_settle(priv, hsfreq, MIPI_DPHY_LANE_CLOCK);

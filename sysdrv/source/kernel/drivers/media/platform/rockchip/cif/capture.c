@@ -510,6 +510,12 @@ static const struct cif_input_fmt in_fmts[] = {
 		.fmt_type	= CIF_FMT_TYPE_RAW,
 		.field		= V4L2_FIELD_NONE,
 	}, {
+		.mbus_code	= MEDIA_BUS_FMT_UYVY8_1X16,
+		.csi_fmt_val	= CSI_WRDDR_TYPE_YUV422,
+		.csi_yuv_order	= CSI_YUV_INPUT_ORDER_UYVY,
+		.fmt_type	= CIF_FMT_TYPE_YUV,
+		.field		= V4L2_FIELD_NONE,
+	}, {
 		.mbus_code	= MEDIA_BUS_FMT_RGB888_1X24,
 		.csi_fmt_val	= CSI_WRDDR_TYPE_RGB888,
 		.fmt_type	= CIF_FMT_TYPE_RAW,
@@ -587,6 +593,7 @@ static int rkcif_output_fmt_check(struct rkcif_stream *stream,
 	case MEDIA_BUS_FMT_YVYU8_2X8:
 	case MEDIA_BUS_FMT_UYVY8_2X8:
 	case MEDIA_BUS_FMT_VYUY8_2X8:
+	case MEDIA_BUS_FMT_UYVY8_1X16:
 		if (output_fmt->fourcc == V4L2_PIX_FMT_NV16 ||
 		    output_fmt->fourcc == V4L2_PIX_FMT_NV61 ||
 		    output_fmt->fourcc == V4L2_PIX_FMT_NV12 ||
@@ -824,6 +831,7 @@ static unsigned char get_data_type(u32 pixelformat, u8 cmd_mode_en, u8 dsi_input
 	case MEDIA_BUS_FMT_VYUY8_2X8:
 	case MEDIA_BUS_FMT_YUYV8_2X8:
 	case MEDIA_BUS_FMT_YVYU8_2X8:
+	case MEDIA_BUS_FMT_UYVY8_1X16:
 		return 0x1e;
 	case MEDIA_BUS_FMT_RGB888_1X24:
 	case MEDIA_BUS_FMT_BGR888_1X24:
@@ -927,7 +935,7 @@ cif_input_fmt *rkcif_get_input_fmt(struct rkcif_device *dev, struct v4l2_rect *r
 				csi_info->data_bit = ch_info.data_bit;
 		}
 	} else {
-		csi_info->vc = 0xff;
+		csi_info->vc = 0;
 	}
 
 	v4l2_dbg(1, rkcif_debug, sd->v4l2_dev,
@@ -1517,13 +1525,13 @@ int rkcif_get_linetime(struct rkcif_stream *stream)
 	vblank_def = rkcif_get_sensor_vblank_def(cif_dev);
 	vblank_curr = rkcif_get_sensor_vblank(cif_dev);
 	if (!vblank_def || !vblank_curr) {
-		v4l2_err(&cif_dev->v4l2_dev,
-			 "get vblank fail, vblank_def %d, vblank_curr %d\n",
+		v4l2_dbg(1, rkcif_debug, &cif_dev->v4l2_dev,
+			 "vblank not available (def %d, curr %d), using raw height only\n",
 			 vblank_def, vblank_curr);
-		return -EINVAL;
 	}
 	line_time = div_u64(1000000000, def_fps);
-	line_time = div_u64(line_time, vblank_def + sensor->raw_rect.height);
+	line_time = div_u64(line_time,
+			    (vblank_def ? vblank_def : 0) + sensor->raw_rect.height);
 	return line_time;
 }
 
@@ -3762,7 +3770,13 @@ static int rkcif_csi_channel_set(struct rkcif_stream *stream,
 		val = CSI_ENABLE_CAPTURE | channel->fmt_val |
 		      channel->cmd_mode_en << 4 | CSI_ENABLE_CROP |
 		      channel->vc << 8 | channel->data_type << 10;
-		if (stream->is_compact)
+		/* Compact mode only applies to Bayer RAW formats,
+		 * not RGB/YUV from HDMI bridges like TC358743.
+		 */
+		if (stream->is_compact &&
+		    stream->cif_fmt_in->fmt_type == CIF_FMT_TYPE_RAW &&
+		    channel->fmt_val != CSI_WRDDR_TYPE_RGB888 &&
+		    channel->fmt_val != CSI_WRDDR_TYPE_RGB565)
 			val |= CSI_ENABLE_MIPI_COMPACT;
 		else
 			val &= ~CSI_ENABLE_MIPI_COMPACT;
@@ -11591,13 +11605,13 @@ void rkcif_irq_pingpong_v1(struct rkcif_device *cif_dev)
 	struct rkcif_stream *stream;
 	struct rkcif_stream *detect_stream = &cif_dev->stream[0];
 	struct v4l2_mbus_config *mbus;
-	struct csi_channel_info *channel = &cif_dev->channels[0];
+	struct csi_channel_info *__maybe_unused channel = &cif_dev->channels[0];
 	unsigned int intstat, i = 0xff;
 	unsigned long flags;
 	bool is_update = false;
 	int ret = 0;
 	int on = 0;
-	int tmp_csi_host_idx = 0;
+	int __maybe_unused tmp_csi_host_idx = 0;
 
 	if (!cif_dev->active_sensor)
 		return;
@@ -11637,23 +11651,14 @@ void rkcif_irq_pingpong_v1(struct rkcif_device *cif_dev)
 			}
 			cif_dev->irq_stats.csi_size_err_cnt++;
 			cif_dev->err_state |= RKCIF_ERR_SIZE;
-			if (cif_dev->channels[0].capture_info.mode == RKMODULE_MULTI_DEV_COMBINE_ONE) {
-				tmp_csi_host_idx = cif_dev->csi_host_idx;
-				for (i = 0; i < channel->capture_info.multi_dev.dev_num; i++) {
-					cif_dev->csi_host_idx = channel->capture_info.multi_dev.dev_idx[i];
-					rkcif_write_register_or(cif_dev, CIF_REG_MIPI_LVDS_CTRL, 0x000A0000);
-				}
-				cif_dev->csi_host_idx = tmp_csi_host_idx;
-			} else {
-				rkcif_write_register_or(cif_dev, CIF_REG_MIPI_LVDS_CTRL, 0x000A0000);
-			}
-			return;
+			/* skip channel reset after CSI_SIZE_ERR to avoid corrupting frame data */
+			/* do not return - continue to process frame end */
 		}
 
 		if (intstat & CSI_FIFO_OVERFLOW_V1) {
 			cif_dev->irq_stats.csi_overflow_cnt++;
 			cif_dev->err_state |= RKCIF_ERR_OVERFLOW;
-			return;
+			/* continue to frame delivery */
 		}
 
 		if (intstat & CSI_BANDWIDTH_LACK_V1 &&
@@ -11669,7 +11674,7 @@ void rkcif_irq_pingpong_v1(struct rkcif_device *cif_dev)
 
 		if (intstat & CSI_ALL_ERROR_INTEN_V1) {
 			cif_dev->irq_stats.all_err_cnt++;
-			return;
+			/* do not return - continue to process frame end */
 		}
 
 		for (i = 0; i < RKCIF_MAX_STREAM_MIPI; i++) {

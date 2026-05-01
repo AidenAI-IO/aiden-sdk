@@ -1,2 +1,2 @@
-docker run -u $(id -u):$(id -g) --privileged --rm -it -v $(pwd):/home -w /home luckfoxtech/luckfox_pico:1.0 /bin/bash
+docker run --privileged --rm -v $(pwd):/home -w /home luckfoxtech/luckfox_pico:1.0 /bin/bash -c "./build.sh all"
 
