@@ -1,0 +1,136 @@
+#!/bin/sh
+#
+# Wi-Fi connectivity monitor for AIC8800 diagnostics.
+# Logs detailed state when the data plane appears dead.
+#
+
+WLAN_DEV="wlan0"
+LOG_FILE="/tmp/wifi_monitor.log"
+LOG_MAX_BYTES=524288
+PING_INTERVAL=30
+PING_TIMEOUT=3
+IP_WAIT_TIMEOUT=60
+PIDFILE="/var/run/wifi_monitor.pid"
+
+wifi_mon_loop() {
+	fail_count=0
+
+	gw=$(ip route show dev $WLAN_DEV default 2>/dev/null | awk '/default/{print $3}')
+	if [ -z "$gw" ]; then
+		gw=$(ip route show dev $WLAN_DEV 2>/dev/null | awk '/default/{print $3}')
+	fi
+	if [ -z "$gw" ]; then
+		gw=$(route -n 2>/dev/null | awk '/^0\.0\.0\.0.*'$WLAN_DEV'/{print $2}')
+	fi
+
+	if [ -z "$gw" ]; then
+		echo "$(date) [wifi_mon] no default gateway found, exiting" >> $LOG_FILE
+		exit 1
+	fi
+
+	echo "$(date) [wifi_mon] started, monitoring gateway $gw via $WLAN_DEV" >> $LOG_FILE
+
+	while true; do
+		if ping -c 1 -W $PING_TIMEOUT $gw > /dev/null 2>&1; then
+			if [ $fail_count -gt 0 ]; then
+				echo "$(date) [wifi_mon] connectivity restored after $fail_count failures" >> $LOG_FILE
+			fi
+			fail_count=0
+		else
+			fail_count=$((fail_count + 1))
+			log_snapshot $fail_count
+		fi
+
+		truncate_log
+		sleep $PING_INTERVAL
+	done
+}
+
+log_snapshot() {
+	_fc=$1
+	{
+		echo "========================================"
+		echo "$(date) [wifi_mon] ping FAILED (consecutive: $_fc)"
+		echo "--- wpa_cli status ---"
+		wpa_cli -i $WLAN_DEV status 2>&1
+		echo "--- ip neigh ---"
+		ip neigh show dev $WLAN_DEV 2>&1
+		echo "--- ip addr ---"
+		ip addr show $WLAN_DEV 2>&1
+		echo "--- ip route ---"
+		ip route 2>&1
+		echo "--- station dump ---"
+		iw dev $WLAN_DEV station dump 2>&1
+		echo "--- driver stats ---"
+		if [ -f /sys/kernel/debug/ieee80211/phy0/aic8800/stats ]; then
+			cat /sys/kernel/debug/ieee80211/phy0/aic8800/stats 2>&1
+		else
+			echo "(not available)"
+		fi
+		echo "--- dmesg tail (aic8800/wlan) ---"
+		dmesg | grep -i -E "aic|wlan|rwnx" | tail -10 2>&1
+		echo "========================================"
+	} >> $LOG_FILE
+}
+
+truncate_log() {
+	if [ -f "$LOG_FILE" ]; then
+		_size=$(wc -c < "$LOG_FILE" 2>/dev/null)
+		if [ "${_size:-0}" -gt $LOG_MAX_BYTES ]; then
+			tail -c 262144 "$LOG_FILE" > "${LOG_FILE}.tmp"
+			mv "${LOG_FILE}.tmp" "$LOG_FILE"
+		fi
+	fi
+}
+
+wait_for_ip() {
+	i=0
+	while [ $i -lt $IP_WAIT_TIMEOUT ]; do
+		if ip addr show $WLAN_DEV 2>/dev/null | grep -q "inet "; then
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	return 1
+}
+
+start() {
+	if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
+		echo "wifi_mon already running"
+		return
+	fi
+
+	if ! wait_for_ip; then
+		echo "$WLAN_DEV has no IP after ${IP_WAIT_TIMEOUT}s, not starting wifi_mon"
+		return
+	fi
+
+	wifi_mon_loop &
+	echo $! > "$PIDFILE"
+}
+
+stop() {
+	if [ -f "$PIDFILE" ]; then
+		kill "$(cat $PIDFILE)" 2>/dev/null
+		rm -f "$PIDFILE"
+	fi
+}
+
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  restart|reload)
+	stop
+	start
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+exit $?
