@@ -1,15 +1,15 @@
 #!/bin/sh
 # Aiden frame service watchdog.
-# Keeps HDMI frame capture available over /tmp/frame_service.sock when the
+# Keeps HDMI frame capture available over /run/frame_service/frame_service.sock when the
 # application bundle is deployed. Configure paths in /etc/aiden_frame_service.conf.
 
 CONFIG_FILE=/etc/aiden_frame_service.conf
 
 APP_DIR=/root/aiden
-SOCKET_PATH=/tmp/frame_service.sock
-LOG_PATH=/tmp/frame_service.log
-PID_FILE=/tmp/frame_service.pid
-WATCHDOG_PID_FILE=/tmp/frame_service_watchdog.pid
+SOCKET_PATH=/run/frame_service/frame_service.sock
+LOG_PATH=/var/log/frame_service/frame_service.log
+PID_FILE=/run/frame_service/frame_service.pid
+WATCHDOG_PID_FILE=/run/frame_service/frame_service_watchdog.pid
 
 if [ -f "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
@@ -24,15 +24,21 @@ is_running() {
 
 service_pid() {
     if [ -f "$PID_FILE" ]; then
-        cat "$PID_FILE"
-        return
+        pid="$(cat "$PID_FILE" 2>/dev/null)"
+        case "$pid" in
+            ''|*[!0-9]*) return ;;
+        esac
+        echo "$pid"
     fi
-    pidof frame_service 2>/dev/null | awk '{print $1}'
 }
 
 watchdog_pid() {
     if [ -f "$WATCHDOG_PID_FILE" ]; then
-        cat "$WATCHDOG_PID_FILE"
+        pid="$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)"
+        case "$pid" in
+            ''|*[!0-9]*) return ;;
+        esac
+        echo "$pid"
     fi
 }
 
@@ -43,7 +49,8 @@ start() {
         return 0
     fi
 
-    mkdir -p "$(dirname "$LOG_PATH")"
+    mkdir -p "$(dirname "$SOCKET_PATH")" "$(dirname "$LOG_PATH")"
+    chmod 0755 "$(dirname "$SOCKET_PATH")" "$(dirname "$LOG_PATH")"
     rm -f "$SOCKET_PATH"
 
     (
