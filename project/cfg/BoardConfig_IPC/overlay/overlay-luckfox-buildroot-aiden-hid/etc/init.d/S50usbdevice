@@ -1,5 +1,0 @@
-#!/bin/sh
-# Disabled - USB port is dedicated to Aiden HID gadget (S49usbhid).
-# The original S50usbdevice creates a rockchip gadget (RNDIS + ADB)
-# which conflicts with USB HID operation.
-exit 0

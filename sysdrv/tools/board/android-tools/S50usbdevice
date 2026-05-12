@@ -14,8 +14,8 @@ ACM_EN=off
 UAC1_EN=off
 UAC2_EN=off
 UVC_EN=off
-RNDIS_EN=on
-HID_EN=off
+RNDIS_EN=off
+HID_EN=on
 
 USB_ATTRIBUTE=0x409
 USB_GROUP=rockchip
