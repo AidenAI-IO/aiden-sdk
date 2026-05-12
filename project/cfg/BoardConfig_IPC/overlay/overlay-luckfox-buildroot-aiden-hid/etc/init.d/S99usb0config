@@ -1,4 +1,0 @@
-#!/bin/sh
-# Disabled - USB networking (usb0) is not needed when USB port is used
-# as a HID gadget. SSH over WiFi is used instead.
-exit 0
