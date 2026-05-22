@@ -136,6 +136,11 @@ function check_config() {
 	return 1
 }
 
+function is_ab_layout() {
+	echo "$GLOBAL_PARTITIONS" | grep -q "(boot_a)" && \
+		echo "$GLOBAL_PARTITIONS" | grep -q "(rootfs_a)"
+}
+
 function __IS_IN_ARRAY() {
 	local value="$1"
 	shift
@@ -1127,7 +1132,12 @@ function build_ota() {
 	local update_img update_script tar_cmd
 
 	if [ -z "$RK_OTA_RESOURCE" ]; then
-		for img in uboot.img boot.img rootfs.img; do
+		if is_ab_layout; then
+			default_update_img="uboot.img misc.img boot_a.img boot_b.img oem_a.img oem_b.img rootfs_a.img rootfs_b.img userdata.img"
+		else
+			default_update_img="uboot.img boot.img rootfs.img"
+		fi
+		for img in $default_update_img; do
 			if [ -f "$RK_PROJECT_OUTPUT_IMAGE/$img" ]; then
 				update_img="$update_img $img"
 			else
@@ -2076,6 +2086,7 @@ function __GET_TARGET_PARTITION_FS_TYPE() {
 		part_mountpoint=${part_mountpoint##*@}
 
 		if echo $GLOBAL_PARTITIONS | grep -w $part_name &>/dev/null; then
+			eval "export ${part_name}$GLOBAL_FS_TYPE_SUFFIX=$part_fs_type"
 			eval "export ${part_name%_[ab]}$GLOBAL_FS_TYPE_SUFFIX=$part_fs_type"
 		else
 			msg_error "Not found $part_name from RK_PARTITION_CMD_IN_ENV in BoardConfig: $BOARD_CONFIG"
@@ -2398,6 +2409,63 @@ function build_mkimg() {
 	finish_build
 }
 
+function build_ab_misc_img() {
+	if ! is_ab_layout; then
+		return 0
+	fi
+
+	mkdir -p ${RK_PROJECT_OUTPUT_IMAGE}
+	python3 $PROJECT_TOP_DIR/scripts/mk-ab-misc.py ${RK_PROJECT_OUTPUT_IMAGE}/misc.img
+}
+
+function build_slot_boot_img() {
+	local slot_suffix root_label out_img kernel_obj_dir dtb_name base_dtb slot_dtb slot_cmdline
+	slot_suffix=$1
+	root_label=$2
+	out_img=$3
+
+	kernel_obj_dir=$SDK_SYSDRV_DIR/source/objs_kernel
+	dtb_name=${RK_KERNEL_DTS/%.dts/.dtb}
+	base_dtb=$kernel_obj_dir/arch/$RK_ARCH/boot/dts/$dtb_name
+	if [ ! -f "$base_dtb" ]; then
+		base_dtb=$RK_PROJECT_PATH_BOARD_BIN/$dtb_name
+	fi
+	if [ ! -f "$base_dtb" ]; then
+		msg_error "Not found base DTB for $out_img"
+		exit 1
+	fi
+
+	if [ ! -f "$RK_PROJECT_PATH_PC_TOOLS/update_dtb_bootargs.sh" -o ! -f "$RK_PROJECT_PATH_PC_TOOLS/mkimage" ]; then
+		build_tool
+	fi
+
+	mkdir -p $kernel_obj_dir/arch/$RK_ARCH/boot/dts
+	slot_dtb=$kernel_obj_dir/arch/$RK_ARCH/boot/dts/${dtb_name%.dtb}${slot_suffix}.dtb
+	slot_cmdline="$RK_PARTITION_ARGS root=PARTLABEL=$root_label rootfstype=$RK_PROJECT_ROOTFS_TYPE aiden.slot_suffix=$slot_suffix"
+	[ -n "$RK_BOOTARGS_CMA_SIZE" ] && slot_cmdline="$slot_cmdline rk_dma_heap_cma=$RK_BOOTARGS_CMA_SIZE"
+	$RK_PROJECT_PATH_PC_TOOLS/update_dtb_bootargs.sh --dtb "$base_dtb" --cmdline "$slot_cmdline" --output "$slot_dtb"
+
+	(
+		cd $kernel_obj_dir
+		ARCH=$RK_ARCH \
+			srctree=$KERNEL_PATH \
+			objtree=$kernel_obj_dir \
+			BOOT_ITS=$KERNEL_PATH/boot.its \
+			MKIMAGE=$RK_PROJECT_PATH_PC_TOOLS/mkimage \
+			$KERNEL_PATH/scripts/mkimg --dtb $(basename "$slot_dtb")
+	)
+	cp -fv $kernel_obj_dir/boot.img $out_img
+}
+
+function build_ab_boot_imgs() {
+	if ! is_ab_layout; then
+		return 0
+	fi
+
+	build_slot_boot_img _a rootfs_a $RK_PROJECT_OUTPUT_IMAGE/boot_a.img
+	build_slot_boot_img _b rootfs_b $RK_PROJECT_OUTPUT_IMAGE/boot_b.img
+}
+
 function __RUN_POST_CLEAN_FILES() {
 	echo "================================================================================"
 	IFS=$RECORD_IFS
@@ -2525,6 +2593,7 @@ function build_firmware() {
 	check_config RK_PARTITION_CMD_IN_ENV || return 0
 
 	build_env
+	build_ab_misc_img
 
 	if [ "$RK_ENABLE_FASTBOOT" = "y" ]; then
 		build_meta
@@ -2532,7 +2601,7 @@ function build_firmware() {
 
 	mkdir -p ${RK_PROJECT_OUTPUT_IMAGE}
 
-	if [ "$RK_ENABLE_RECOVERY" = "y" -a -f $PROJECT_TOP_DIR/scripts/${RK_MISC:=recovery-misc.img} ]; then
+	if [ "$RK_ENABLE_RECOVERY" = "y" -a -f $PROJECT_TOP_DIR/scripts/${RK_MISC:=recovery-misc.img} ] && ! is_ab_layout; then
 		cp -fv $PROJECT_TOP_DIR/scripts/$RK_MISC ${RK_PROJECT_OUTPUT_IMAGE}/misc.img
 	fi
 
@@ -2546,7 +2615,12 @@ function build_firmware() {
 	if [ "$RK_BUILD_APP_TO_OEM_PARTITION" = "y" ]; then
 		rm -rf $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem/*
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
-		build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
+		if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_OEM_NAME}_a)"; then
+			build_mkimg ${GLOBAL_OEM_NAME}_a $RK_PROJECT_PACKAGE_OEM_DIR
+			cp -fv $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_b.img
+		else
+			build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
+		fi
 	else
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
 		__COPY_FILES $RK_PROJECT_PACKAGE_OEM_DIR $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
@@ -2560,14 +2634,27 @@ function build_firmware() {
 		build_mkimg boot $RK_PROJECT_PACKAGE_ROOTFS_DIR
 	fi
 
+	build_ab_boot_imgs
+
 	if [ "$RK_ENABLE_FASTBOOT" = "y" ]; then
 		if [ "$RK_ENABLE_RAMDISK_PARTITION" = "y" ]; then
-			build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
+			if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
+				build_mkimg ${GLOBAL_ROOT_FILESYSTEM_NAME}_a $RK_PROJECT_PACKAGE_ROOTFS_DIR
+			else
+				build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
+			fi
 		else
 			build_mkimg boot $RK_PROJECT_PACKAGE_ROOTFS_DIR
 		fi
 	else
-		build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
+		if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
+			build_mkimg ${GLOBAL_ROOT_FILESYSTEM_NAME}_a $RK_PROJECT_PACKAGE_ROOTFS_DIR
+		else
+			build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
+		fi
+	fi
+	if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
+		cp -fv $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_b.img
 	fi
 
 	# package a empty userdata parition image
