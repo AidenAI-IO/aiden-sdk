@@ -4,6 +4,9 @@
  * SPDX-License-Identifier:     GPL-2.0+
  */
 #include <common.h>
+#ifdef CONFIG_ANDROID_AB
+#include <android_avb/rk_avb_ops_user.h>
+#endif
 #include <boot_rkimg.h>
 #include <image.h>
 #include <malloc.h>
@@ -142,11 +145,18 @@ static void *fit_get_blob(struct blk_desc *dev_desc,
 {
 	__maybe_unused int conf_noffset;
 	disk_partition_t part;
+	char ab_part_name[32] = {0};
 	char *part_name = PART_BOOT;
 	void *fit, *fdt;
 	int blk_num;
 
-#ifndef CONFIG_ANDROID_AB
+#ifdef CONFIG_ANDROID_AB
+	if (rk_avb_append_part_slot(PART_BOOT, ab_part_name)) {
+		FIT_I("Failed to resolve A/B boot partition\n");
+		return NULL;
+	}
+	part_name = ab_part_name;
+#else
 	if (rockchip_get_boot_mode() == BOOT_MODE_RECOVERY)
 		part_name = PART_RECOVERY;
 #endif

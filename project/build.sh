@@ -2464,6 +2464,7 @@ function build_ab_boot_imgs() {
 
 	build_slot_boot_img _a rootfs_a $RK_PROJECT_OUTPUT_IMAGE/boot_a.img
 	build_slot_boot_img _b rootfs_b $RK_PROJECT_OUTPUT_IMAGE/boot_b.img
+	rm -f $RK_PROJECT_OUTPUT_IMAGE/boot.img
 }
 
 function __RUN_POST_CLEAN_FILES() {
