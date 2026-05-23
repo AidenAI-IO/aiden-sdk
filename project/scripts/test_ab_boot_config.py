@@ -36,6 +36,11 @@ class ABBootConfigTest(unittest.TestCase):
         text = BUILD_SH.read_text()
         self.assertIn("rm -f $RK_PROJECT_OUTPUT_IMAGE/boot.img", text)
 
+    def test_ab_build_does_not_force_rootfs_a_in_global_bootargs(self):
+        text = BUILD_SH.read_text()
+        self.assertIn('is_ab_layout && [[ ${part_name%_[ab]} == "rootfs"', text)
+        self.assertIn("slot FIT bootargs choose root=PARTLABEL", text)
+
 
 if __name__ == "__main__":
     unittest.main()

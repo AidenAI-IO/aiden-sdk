@@ -1782,7 +1782,10 @@ function parse_partition_file() {
 			fi
 		fi
 
-		if [[ ${part_name%_[a]} == "rootfs" || ${part_name%_[a]} == "system" ]]; then
+		if is_ab_layout && [[ ${part_name%_[ab]} == "rootfs" || ${part_name%_[ab]} == "system" ]]; then
+			# A/B slot FIT bootargs choose root=PARTLABEL per boot_a/boot_b image.
+			:
+		elif [[ ${part_name%_[a]} == "rootfs" || ${part_name%_[a]} == "system" ]]; then
 			case $RK_BOOT_MEDIUM in
 			emmc)
 				if [ "$RK_ENABLE_FASTBOOT" = "y" -a "$RK_ENABLE_RAMDISK_PARTITION" = "y" ]; then
