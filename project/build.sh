@@ -1497,6 +1497,18 @@ function __PACKAGE_USERDATA() {
 	fi
 }
 
+function copy_ab_image() {
+	local src="$1"
+	local dst="$2"
+
+	rm -f "$dst"
+	if ln "$src" "$dst" 2>/dev/null; then
+		echo "'$src' => '$dst' (hard link)"
+	else
+		cp -fv "$src" "$dst"
+	fi
+}
+
 function __PACKAGE_ROOTFS() {
 	local rootfs_tarball rootfs_out_dir
 	rootfs_tarball="$RK_PROJECT_PATH_SYSDRV/rootfs_${RK_LIBC_TPYE}_${RK_CHIP}.tar"
@@ -2618,7 +2630,7 @@ function build_firmware() {
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
 		if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_OEM_NAME}_a)"; then
 			build_mkimg ${GLOBAL_OEM_NAME}_a $RK_PROJECT_PACKAGE_OEM_DIR
-			cp -fv $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_b.img
+			copy_ab_image $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_b.img
 		else
 			build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
 		fi
@@ -2655,7 +2667,7 @@ function build_firmware() {
 		fi
 	fi
 	if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
-		cp -fv $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_b.img
+		copy_ab_image $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_b.img
 	fi
 
 	# package a empty userdata parition image
