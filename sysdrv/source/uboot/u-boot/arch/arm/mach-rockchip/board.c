@@ -1301,7 +1301,11 @@ static void bootargs_add_partition(bool verbose)
 
 	env = env_get("sys_bootargs");
 	if (env) {
+#ifdef CONFIG_ANDROID_AB
+		env_update_filter("bootargs", env, "root=");
+#else
 		env_update("bootargs", env);
+#endif
 		if (verbose)
 			printf("## sys_bootargs: %s\n\n", env);
 	}
@@ -1339,15 +1343,9 @@ static void bootargs_add_dtb_dtbo(void *fdt, bool verbose)
 		if (verbose)
 			printf("## bootargs(%s-%s): %s\n\n",
 			       msg, arr_bootargs[i], bootargs);
-		/*
-		 * Append kernel bootargs
-		 * If use AB system, delete default "root=" which route
-		 * to rootfs. Then the ab bootctl will choose the
-		 * high priority system to boot and add its UUID
-		 * to cmdline. The format is "roo=PARTUUID=xxxx...".
-		 */
 #ifdef CONFIG_ANDROID_AB
-		env_update_filter("bootargs", bootargs, "root=");
+		/* Preserve slot FIT root=PARTLABEL=... and filter legacy env root=. */
+		env_update("bootargs", bootargs);
 #else
 		env_update("bootargs", bootargs);
 #endif
@@ -1475,4 +1473,3 @@ int ft_verify_fdt(void *fdt)
 #endif
 	return 1;
 }
-

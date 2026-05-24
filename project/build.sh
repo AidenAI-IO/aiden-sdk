@@ -1509,6 +1509,13 @@ function copy_ab_image() {
 	fi
 }
 
+function normalize_image_tree_ownership() {
+	local dir="$1"
+
+	[ -d "$dir" ] || return 0
+	chown -hR 0:0 "$dir"
+}
+
 function __PACKAGE_ROOTFS() {
 	local rootfs_tarball rootfs_out_dir
 	rootfs_tarball="$RK_PROJECT_PATH_SYSDRV/rootfs_${RK_LIBC_TPYE}_${RK_CHIP}.tar"
@@ -2627,6 +2634,7 @@ function build_firmware() {
 	__BUILD_ENABLE_COREDUMP_SCRIPT
 
 	__RUN_PRE_BUILD_OEM_SCRIPT
+	normalize_image_tree_ownership $RK_PROJECT_PACKAGE_OEM_DIR
 
 	if [ "$RK_BUILD_APP_TO_OEM_PARTITION" = "y" ]; then
 		rm -rf $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem/*
@@ -2645,6 +2653,7 @@ function build_firmware() {
 
 	__RUN_POST_BUILD_SCRIPT
 	post_overlay
+	normalize_image_tree_ownership $RK_PROJECT_PACKAGE_ROOTFS_DIR
 
 	if [ -n "$GLOBAL_INITRAMFS_BOOT_NAME" ]; then
 		build_mkimg boot $RK_PROJECT_PACKAGE_ROOTFS_DIR
@@ -2679,6 +2688,7 @@ function build_firmware() {
 		__PACKAGE_USERDATA
 		__RUN_POST_BUILD_USERDATA_SCRIPT
 	fi
+	normalize_image_tree_ownership $RK_PROJECT_PACKAGE_USERDATA_DIR
 	build_mkimg userdata $RK_PROJECT_PACKAGE_USERDATA_DIR
 
 	build_tftp_sd_update
