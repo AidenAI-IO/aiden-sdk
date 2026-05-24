@@ -84,7 +84,8 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-export RK_KERNEL_DEFCONFIG_FRAGMENT=rv1106-bt.config
+# Disabled bt fragment for boot-item slimming; keep file for easy rollback.
+# export RK_KERNEL_DEFCONFIG_FRAGMENT=rv1106-bt.config
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
@@ -105,7 +106,8 @@ export RK_CAMERA_SENSOR_IQFILES="mia1321_MIA1321_30IRC-F16.json imx415_CMK-OT202
 export RK_BUILD_APP_TO_OEM_PARTITION=y
 
 # enable rockchip test
-export RK_ENABLE_ROCKCHIP_TEST=y
+# Disabled for production boot-item slimming.
+# export RK_ENABLE_ROCKCHIP_TEST=y
 
 # enable rockchip wifi
 export RK_ENABLE_WIFI=y
