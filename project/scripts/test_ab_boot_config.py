@@ -40,7 +40,14 @@ class ABBootConfigTest(unittest.TestCase):
     def test_ab_build_does_not_force_rootfs_a_in_global_bootargs(self):
         text = BUILD_SH.read_text()
         self.assertIn('is_ab_layout && [[ ${part_name%_[ab]} == "rootfs"', text)
+        self.assertIn('echo "$GLOBAL_PARTITIONS" | grep -q "(system_a)"', text)
         self.assertIn("slot FIT bootargs choose root=PARTLABEL", text)
+
+    def test_ab_slot_boot_images_use_detected_root_partition_name(self):
+        text = BUILD_SH.read_text()
+        self.assertIn('root_label_base="${GLOBAL_ROOT_FILESYSTEM_NAME:-rootfs}"', text)
+        self.assertIn('build_slot_boot_img _a ${root_label_base}_a', text)
+        self.assertIn('build_slot_boot_img _b ${root_label_base}_b', text)
 
     def test_uboot_preserves_slot_root_and_filters_legacy_sys_root(self):
         text = BOARD_C.read_text()

@@ -14,6 +14,8 @@ def factory_ab_metadata():
     data[0:4] = b"\x00AB0"
     data[4] = 1
     data[5] = 0
+    # Factory boot has no pending OTA health marker, so slot A must start
+    # successful. Slot B is populated but disabled until OTA stages a trial boot.
     data[8:12] = bytes([15, 0, 1, 0])
     data[12:16] = bytes([0, 0, 0, 0])
     data[16] = 0

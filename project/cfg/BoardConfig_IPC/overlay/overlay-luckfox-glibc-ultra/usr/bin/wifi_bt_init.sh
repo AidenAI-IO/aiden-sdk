@@ -36,10 +36,10 @@ if [ "$(cat /proc/device-tree/model)" == "Luckfox Pico Ultra W" ] ||
 	fi
 
 	WPA_CONF=/etc/wpa_supplicant.conf
-	if [ -f /data/cfg/wpa_supplicant.conf ]; then
-		WPA_CONF=/data/cfg/wpa_supplicant.conf
-	elif [ -f /data/wpa_supplicant.conf ]; then
+	if [ -f /data/wpa_supplicant.conf ]; then
 		WPA_CONF=/data/wpa_supplicant.conf
+	elif [ -f /data/cfg/wpa_supplicant.conf ]; then
+		WPA_CONF=/data/cfg/wpa_supplicant.conf
 	fi
 
 	if [ -f "$WPA_CONF" ] && [ -n "$(ifconfig | grep "wlan0")" ]; then

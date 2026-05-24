@@ -138,7 +138,8 @@ function check_config() {
 
 function is_ab_layout() {
 	echo "$GLOBAL_PARTITIONS" | grep -q "(boot_a)" && \
-		echo "$GLOBAL_PARTITIONS" | grep -q "(rootfs_a)"
+		(echo "$GLOBAL_PARTITIONS" | grep -q "(rootfs_a)" || \
+			echo "$GLOBAL_PARTITIONS" | grep -q "(system_a)")
 }
 
 function __IS_IN_ARRAY() {
@@ -1513,7 +1514,11 @@ function normalize_image_tree_ownership() {
 	local dir="$1"
 
 	[ -d "$dir" ] || return 0
-	chown -hR 0:0 "$dir"
+	if [ "$(id -u)" -eq 0 ]; then
+		chown -hR 0:0 "$dir"
+	else
+		msg_info "Skip ownership normalization for $dir (non-root user)"
+	fi
 }
 
 function __PACKAGE_ROOTFS() {
@@ -2480,12 +2485,15 @@ function build_slot_boot_img() {
 }
 
 function build_ab_boot_imgs() {
+	local root_label_base
+
 	if ! is_ab_layout; then
 		return 0
 	fi
 
-	build_slot_boot_img _a rootfs_a $RK_PROJECT_OUTPUT_IMAGE/boot_a.img
-	build_slot_boot_img _b rootfs_b $RK_PROJECT_OUTPUT_IMAGE/boot_b.img
+	root_label_base="${GLOBAL_ROOT_FILESYSTEM_NAME:-rootfs}"
+	build_slot_boot_img _a ${root_label_base}_a $RK_PROJECT_OUTPUT_IMAGE/boot_a.img
+	build_slot_boot_img _b ${root_label_base}_b $RK_PROJECT_OUTPUT_IMAGE/boot_b.img
 	rm -f $RK_PROJECT_OUTPUT_IMAGE/boot.img
 }
 
