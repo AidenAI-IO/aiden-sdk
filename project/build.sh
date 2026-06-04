@@ -1134,7 +1134,7 @@ function build_ota() {
 
 	if [ -z "$RK_OTA_RESOURCE" ]; then
 		if is_ab_layout; then
-			default_update_img="uboot.img misc.img boot_a.img boot_b.img oem_a.img oem_b.img rootfs_a.img rootfs_b.img userdata.img"
+			default_update_img="uboot.img misc.img boot_a.img boot_b.img oem.img rootfs.img userdata.img"
 		else
 			default_update_img="uboot.img boot.img rootfs.img"
 		fi
@@ -1181,6 +1181,19 @@ function build_updateimg() {
 
 	IMAGE_PATH=$RK_PROJECT_OUTPUT_IMAGE
 	PACK_TOOL_PATH=$SDK_ROOT_DIR/tools/linux/Linux_Pack_Firmware
+
+	# For AB layouts, create symlinks from oem_a/oem_b to oem.img and rootfs_a/rootfs_b to rootfs.img
+	# This allows update.img to contain all partition images while using neutral resources for OTA
+	if is_ab_layout; then
+		if [ -f "$IMAGE_PATH/oem.img" ]; then
+			ln -sf oem.img "$IMAGE_PATH/oem_a.img"
+			ln -sf oem.img "$IMAGE_PATH/oem_b.img"
+		fi
+		if [ -f "$IMAGE_PATH/rootfs.img" ]; then
+			ln -sf rootfs.img "$IMAGE_PATH/rootfs_a.img"
+			ln -sf rootfs.img "$IMAGE_PATH/rootfs_b.img"
+		fi
+	fi
 
 	# run update.img package script
 	$PACK_TOOL_PATH/mk-update_pack.sh -id $RK_CHIP -i $IMAGE_PATH
@@ -2647,12 +2660,9 @@ function build_firmware() {
 	if [ "$RK_BUILD_APP_TO_OEM_PARTITION" = "y" ]; then
 		rm -rf $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem/*
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
-		if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_OEM_NAME}_a)"; then
-			build_mkimg ${GLOBAL_OEM_NAME}_a $RK_PROJECT_PACKAGE_OEM_DIR
-			copy_ab_image $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_OEM_NAME}_b.img
-		else
-			build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
-		fi
+		# Always build neutral oem.img for OTA efficiency
+		# update.img will use symlinks to this file for both A/B slots
+		build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
 	else
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
 		__COPY_FILES $RK_PROJECT_PACKAGE_OEM_DIR $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
@@ -2680,14 +2690,9 @@ function build_firmware() {
 			build_mkimg boot $RK_PROJECT_PACKAGE_ROOTFS_DIR
 		fi
 	else
-		if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
-			build_mkimg ${GLOBAL_ROOT_FILESYSTEM_NAME}_a $RK_PROJECT_PACKAGE_ROOTFS_DIR
-		else
-			build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
-		fi
-	fi
-	if echo "$GLOBAL_PARTITIONS" | grep -q "(${GLOBAL_ROOT_FILESYSTEM_NAME}_a)"; then
-		copy_ab_image $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_a.img $RK_PROJECT_OUTPUT_IMAGE/${GLOBAL_ROOT_FILESYSTEM_NAME}_b.img
+		# Always build neutral rootfs.img for OTA efficiency
+		# update.img will use symlinks to this file for both A/B slots
+		build_mkimg $GLOBAL_ROOT_FILESYSTEM_NAME $RK_PROJECT_PACKAGE_ROOTFS_DIR
 	fi
 
 	# package a empty userdata parition image
