@@ -1182,8 +1182,8 @@ function build_updateimg() {
 	IMAGE_PATH=$RK_PROJECT_OUTPUT_IMAGE
 	PACK_TOOL_PATH=$SDK_ROOT_DIR/tools/linux/Linux_Pack_Firmware
 
-	# For AB layouts, create symlinks from oem_a/oem_b to oem.img and rootfs_a/rootfs_b to rootfs.img
-	# This allows update.img to contain all partition images while using neutral resources for OTA
+	# For AB layouts, create temporary symlinks for update.img packaging
+	# (mk-update_pack.sh needs files matching partition table names)
 	if is_ab_layout; then
 		if [ -f "$IMAGE_PATH/oem.img" ]; then
 			ln -sf oem.img "$IMAGE_PATH/oem_a.img"
@@ -1197,6 +1197,12 @@ function build_updateimg() {
 
 	# run update.img package script
 	$PACK_TOOL_PATH/mk-update_pack.sh -id $RK_CHIP -i $IMAGE_PATH
+
+	# Clean up temporary symlinks after update.img is packaged
+	if is_ab_layout; then
+		rm -f "$IMAGE_PATH/oem_a.img" "$IMAGE_PATH/oem_b.img"
+		rm -f "$IMAGE_PATH/rootfs_a.img" "$IMAGE_PATH/rootfs_b.img"
+	fi
 
 	finish_build
 }
