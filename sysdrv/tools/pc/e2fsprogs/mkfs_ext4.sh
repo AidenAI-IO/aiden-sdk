@@ -122,6 +122,10 @@ normalize_ext4_superblock_times() {
 			write_ext4_le32_at "$image" "$((sb_offset + 44))" "$source_date_epoch"
 			write_ext4_le32_at "$image" "$((sb_offset + 48))" "$source_date_epoch"
 			write_ext4_le32_at "$image" "$((sb_offset + 64))" "$source_date_epoch"
+			write_ext4_le32_at "$image" "$((sb_offset + 236))" 0
+			write_ext4_le32_at "$image" "$((sb_offset + 240))" 0
+			write_ext4_le32_at "$image" "$((sb_offset + 244))" 0
+			write_ext4_le32_at "$image" "$((sb_offset + 248))" 0
 			write_ext4_le32_at "$image" "$((sb_offset + 264))" "$source_date_epoch"
 			patched=$((patched + 1))
 		fi
@@ -132,7 +136,94 @@ normalize_ext4_superblock_times() {
 		exit 1
 	fi
 
-	echo "patched $patched ext4 superblock timestamp copies"
+	echo "patched $patched ext4 superblock metadata copies"
+}
+
+normalize_ext4_inode_times() {
+	local image="$dst"
+
+	if ! command -v perl >/dev/null 2>&1; then
+		echo "perl is required to normalize ext4 inode timestamps" >&2
+		exit 1
+	fi
+
+	perl - "$image" "$source_date_epoch" <<'PERL'
+use strict;
+use warnings;
+
+my ($image, $epoch) = @ARGV;
+open(my $fh, '+<:raw', $image) or die "Failed to open $image: $!\n";
+
+sub read_at {
+	my ($fh, $offset, $length) = @_;
+	seek($fh, $offset, 0) or die "Failed to seek to $offset: $!\n";
+	my $data = '';
+	my $read = read($fh, $data, $length);
+	die "Failed to read at $offset: $!\n" unless defined $read;
+	die "Short read at $offset from $image\n" unless $read == $length;
+	return $data;
+}
+
+sub write_at {
+	my ($fh, $offset, $data) = @_;
+	seek($fh, $offset, 0) or die "Failed to seek to $offset: $!\n";
+	my $written = print {$fh} $data;
+	die "Failed to write at $offset: $!\n" unless $written;
+}
+
+sub le16_at {
+	my ($offset) = @_;
+	return unpack('v', read_at($fh, $offset, 2));
+}
+
+sub le32_at {
+	my ($offset) = @_;
+	return unpack('V', read_at($fh, $offset, 4));
+}
+
+my $sb = 1024;
+my $inodes_count = le32_at($sb);
+my $first_data_block = le32_at($sb + 20);
+my $log_block_size = le32_at($sb + 24);
+my $inodes_per_group = le32_at($sb + 40);
+my $inode_size = le16_at($sb + 88);
+my $desc_size = le16_at($sb + 254);
+
+die "Invalid ext4 inode layout in $image\n"
+	if $inodes_count == 0 || $inodes_per_group == 0 || $inode_size < 128;
+
+$desc_size = 32 if $desc_size < 32;
+my $block_size = 1024 << $log_block_size;
+my $group_count = int(($inodes_count + $inodes_per_group - 1) / $inodes_per_group);
+my $gd_table_offset = ($first_data_block + 1) * $block_size;
+my $time = pack('V', $epoch);
+my $extra_time = ("\0" x 12) . $time . ("\0" x 4);
+my $patched = 0;
+
+for (my $group = 0; $group < $group_count; $group++) {
+	my $group_inodes = $inodes_count - $group * $inodes_per_group;
+	$group_inodes = $inodes_per_group if $group_inodes > $inodes_per_group;
+	my $gd_offset = $gd_table_offset + $group * $desc_size;
+	my $gd = read_at($fh, $gd_offset, $desc_size);
+	my $inode_bitmap_block = unpack('V', substr($gd, 4, 4));
+	my $inode_table_block = unpack('V', substr($gd, 8, 4));
+	my $bitmap_bytes = int(($group_inodes + 7) / 8);
+	my $bitmap = read_at($fh, $inode_bitmap_block * $block_size, $bitmap_bytes);
+
+	for (my $inode_in_group = 0; $inode_in_group < $group_inodes; $inode_in_group++) {
+		my $byte = ord(substr($bitmap, int($inode_in_group / 8), 1));
+		next unless $byte & (1 << ($inode_in_group % 8));
+
+		my $inode_offset = $inode_table_block * $block_size + $inode_in_group * $inode_size;
+		write_at($fh, $inode_offset + 8, $time x 3);
+		write_at($fh, $inode_offset + 132, $extra_time) if $inode_size >= 152;
+		$patched++;
+	}
+}
+
+die "No used ext4 inodes found in $image\n" if $patched == 0;
+print "patched $patched ext4 inode timestamp copies\n";
+PERL
 }
 
 mkfs_ext4_uuid_opt=()
@@ -165,7 +256,8 @@ mkfs_ext4_opts=(
 	-L ""
 	"${mkfs_ext4_uuid_opt[@]}"
 	-E lazy_itable_init=0,lazy_journal_init=0,root_owner=0:0
-	-O ^64bit,^huge_file,^metadata_csum,^metadata_csum_seed
+	# Avoid HTREE directories depending on mke2fs's random s_hash_seed.
+	-O ^64bit,^huge_file,^metadata_csum,^metadata_csum_seed,^dir_index
 )
 
 
@@ -185,5 +277,7 @@ echo "tune2fs -m 5  $dst"
 tune2fs -m 5  $dst
 echo "resize2fs -M $dst"
 resize2fs -M $dst
-echo "normalize ext4 superblock timestamps to SOURCE_DATE_EPOCH=$source_date_epoch"
+echo "normalize ext4 superblock metadata to SOURCE_DATE_EPOCH=$source_date_epoch"
 normalize_ext4_superblock_times
+echo "normalize ext4 inode timestamps to SOURCE_DATE_EPOCH=$source_date_epoch"
+normalize_ext4_inode_times
