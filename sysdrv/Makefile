@@ -1,6 +1,8 @@
 SYSDRV_DIR=$(shell pwd)
 
 export LC_ALL=C
+SOURCE_DATE_EPOCH ?= 0
+export SOURCE_DATE_EPOCH
 SHELL:=/bin/bash
 MAKE=make
 AT?=@
@@ -717,7 +719,9 @@ rootfs: $(ROOTFS_BUILD_ENV)
 	#	make -C $(SYSDRV_DIR) strip \
 	#fi
 
-	pushd $(SYSDRV_DIR)/out;tar cf $(OUT_ROOTFS).tar $(OUT_ROOTFS);popd
+	pushd $(SYSDRV_DIR)/out; \
+		tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner -cf $(OUT_ROOTFS).tar $(OUT_ROOTFS); \
+	popd
 	@# RK_PARTITION_FS_TYPE_CFG is defined outside of sysdrv,
 	@# so if defined RK_PARTITION_FS_TYPE_CFG, we ignore SYSDRV_ROOTFS_BUILD_TARGET
 	@test "$(ROOTFS_PART_SIZE)" = "FAIL" || \

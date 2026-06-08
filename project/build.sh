@@ -1539,6 +1539,30 @@ function normalize_image_tree_ownership() {
 		msg_info "Skip ownership normalization for $dir (non-root user)"
 	fi
 }
+function reproducible_build_epoch() {
+	local epoch="${SOURCE_DATE_EPOCH:-0}"
+
+	if [[ "$epoch" =~ ^[0-9]+$ ]]; then
+		echo "$epoch"
+	else
+		msg_error "SOURCE_DATE_EPOCH must be a Unix timestamp: $epoch"
+		exit 1
+	fi
+}
+
+function reproducible_build_utc() {
+	date -u -d "@$(reproducible_build_epoch)" "+%Y-%m-%d-%T"
+}
+
+function normalize_image_tree_mtime() {
+	local dir="$1"
+	local epoch
+
+	[ -d "$dir" ] || return 0
+	epoch="$(reproducible_build_epoch)"
+	find "$dir" -xdev -exec touch -h -d "@$epoch" {} +
+}
+
 
 function __PACKAGE_ROOTFS() {
 	local rootfs_tarball rootfs_out_dir
@@ -1553,7 +1577,7 @@ function __PACKAGE_ROOTFS() {
 		build_get_sdk_version
 		cat >$RK_PROJECT_PACKAGE_ROOTFS_DIR/bin/sdkinfo <<EOF
 #!/bin/sh
-echo Build Time:  $(date "+%Y-%m-%d-%T")
+echo Build Time:  $(reproducible_build_utc)
 echo SDK Version: ${GLOBAL_SDK_VERSION}
 EOF
 		chmod a+x $RK_PROJECT_PACKAGE_ROOTFS_DIR/bin/sdkinfo
@@ -2311,6 +2335,13 @@ function build_mkimg() {
 	if [ "$LF_TARGET_ROOTFS" == "buildroot" ] || [ "$LF_TARGET_ROOTFS" == "busybox" ]; then
 		__RELEASE_FILESYSTEM_FILES $src
 	fi
+	case "${part_name%_[ab]}" in
+	"$GLOBAL_ROOT_FILESYSTEM_NAME" | system)
+		normalize_image_tree_mtime "$src"
+		;;
+	*)
+		;;
+	esac
 
 	msg_info "src=$src"
 	msg_info "dst=$dst"
