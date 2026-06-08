@@ -2339,6 +2339,11 @@ function build_mkimg() {
 	"$GLOBAL_ROOT_FILESYSTEM_NAME" | system)
 		normalize_image_tree_mtime "$src"
 		;;
+	boot)
+		if [ "$RK_ENABLE_FASTBOOT" = "y" -a "$fs_type" = "erofs" ]; then
+			normalize_image_tree_mtime "$src"
+		fi
+		;;
 	*)
 		;;
 	esac
