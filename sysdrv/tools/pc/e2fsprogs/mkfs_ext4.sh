@@ -21,7 +21,10 @@ if [ -z "$3" -o -z "$dst" -o ! -d "$src" ]; then
 	exit 0
 fi
 source_date_epoch="${SOURCE_DATE_EPOCH:-0}"
-if ! [[ "$source_date_epoch" =~ ^[0-9]+$ ]] || [ "$source_date_epoch" -gt 4294967295 ]; then
+source_date_epoch_len="${#source_date_epoch}"
+if ! [[ "$source_date_epoch" =~ ^[0-9]+$ ]] ||
+	[ "$source_date_epoch_len" -gt 10 ] ||
+	{ [ "$source_date_epoch_len" -eq 10 ] && [[ "$source_date_epoch" > "4294967295" ]]; }; then
 	echo "SOURCE_DATE_EPOCH must be an unsigned 32-bit Unix timestamp: $source_date_epoch" >&2
 	exit 1
 fi
