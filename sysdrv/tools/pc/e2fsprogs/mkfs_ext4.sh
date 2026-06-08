@@ -139,11 +139,11 @@ normalize_ext4_superblock_times() {
 	echo "patched $patched ext4 superblock metadata copies"
 }
 
-normalize_ext4_inode_times() {
+normalize_ext4_inode_metadata() {
 	local image="$dst"
 
 	if ! command -v perl >/dev/null 2>&1; then
-		echo "perl is required to normalize ext4 inode timestamps" >&2
+		echo "perl is required to normalize ext4 inode metadata" >&2
 		exit 1
 	fi
 
@@ -216,13 +216,14 @@ for (my $group = 0; $group < $group_count; $group++) {
 
 		my $inode_offset = $inode_table_block * $block_size + $inode_in_group * $inode_size;
 		write_at($fh, $inode_offset + 8, $time x 3);
+		write_at($fh, $inode_offset + 100, "\0" x 4);
 		write_at($fh, $inode_offset + 132, $extra_time) if $inode_size >= 152;
 		$patched++;
 	}
 }
 
 die "No used ext4 inodes found in $image\n" if $patched == 0;
-print "patched $patched ext4 inode timestamp copies\n";
+print "patched $patched ext4 inode metadata copies\n";
 PERL
 }
 
@@ -248,6 +249,34 @@ bin_dir=./
 if [ -f $cwd/bin/mkfs.ext4 ];then
 	bin_dir=bin
 fi
+
+mkfs_ext4_supported_disable_features() {
+	local probe feature selected_features=()
+
+	probe="$(mktemp)"
+	truncate -s 1M "$probe"
+	for feature in "$@"; do
+		if mkfs.ext4 -q -n -O "$feature" "$probe" >/dev/null 2>&1; then
+			selected_features+=("$feature")
+		else
+			echo "skip unsupported ext4 feature toggle: $feature" >&2
+		fi
+	done
+	rm -f "$probe"
+
+	local IFS=,
+	echo "${selected_features[*]}"
+}
+
+mkfs_ext4_feature_opts="$(mkfs_ext4_supported_disable_features \
+	^64bit \
+	^huge_file \
+	^metadata_csum \
+	^metadata_csum_seed \
+	^dir_index \
+	^orphan_file \
+	^quota)"
+
 mkfs_ext4_opts=(
 	-d "$src"
 	-r 1
@@ -257,7 +286,7 @@ mkfs_ext4_opts=(
 	"${mkfs_ext4_uuid_opt[@]}"
 	-E lazy_itable_init=0,lazy_journal_init=0,root_owner=0:0
 	# Avoid HTREE directories depending on mke2fs's random s_hash_seed.
-	-O ^64bit,^huge_file,^metadata_csum,^metadata_csum_seed,^dir_index
+	-O "$mkfs_ext4_feature_opts"
 )
 
 
@@ -279,5 +308,5 @@ echo "resize2fs -M $dst"
 resize2fs -M $dst
 echo "normalize ext4 superblock metadata to SOURCE_DATE_EPOCH=$source_date_epoch"
 normalize_ext4_superblock_times
-echo "normalize ext4 inode timestamps to SOURCE_DATE_EPOCH=$source_date_epoch"
-normalize_ext4_inode_times
+echo "normalize ext4 inode metadata to SOURCE_DATE_EPOCH=$source_date_epoch"
+normalize_ext4_inode_metadata
