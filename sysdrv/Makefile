@@ -315,6 +315,7 @@ SYSDRV_RAMDISK_DIR ?= $(SYSDRV_DIR_OUT_BOARD)
 HCITOOL_TOOL_PATH :=$(SYSDRV_DIR)/tools/board/buildroot/hcitool_patch
 MPV_PATCH_PATH :=$(SYSDRV_DIR)/tools/board/buildroot/mpv_patch
 BUSYBOX_PATCH_PATH :=$(SYSDRV_DIR)/tools/board/buildroot/busybox_patch
+LIBOPENSSL_PATCH_PATH :=$(SYSDRV_DIR)/tools/board/buildroot/libopenssl_patch
 
 define sync_buildroot_board_config
 	cp $(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig $(BUILDROOT_DIR)/$(BUILDROOT_VER)/configs/
@@ -323,6 +324,7 @@ define sync_buildroot_board_config
 	cp ${HCITOOL_TOOL_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/bluez5_utils/
 	cp ${MPV_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/mpv/
 	cp ${BUSYBOX_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/busybox/
+	cp ${LIBOPENSSL_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/libopenssl/
 endef
 
 define refresh_buildroot_config_state
@@ -334,7 +336,7 @@ define refresh_buildroot_config_state
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig"; \
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
-				find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
+				find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" "$(LIBOPENSSL_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
 			} | sha256sum | awk '{print $$1}' \
 		)"; \
 		needs_rebuild=0; \
@@ -346,8 +348,8 @@ define refresh_buildroot_config_state
 			fi; \
 		fi; \
 		if [ "$$needs_rebuild" -eq 1 ]; then \
-			echo "Buildroot configuration changed; rebuilding generated Buildroot state"; \
-			$(MAKE) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) clean; \
+			echo "Buildroot reproducibility inputs changed; rebuilding affected packages"; \
+			$(MAKE) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) libopenssl-dirclean; \
 		fi; \
 		mkdir -p "$$(dirname "$$stamp")"; \
 		printf '%s\n' "$$state" > "$$stamp"
