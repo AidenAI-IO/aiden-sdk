@@ -4,6 +4,7 @@ export LC_ALL=C
 SOURCE_DATE_EPOCH ?= 0
 export SOURCE_DATE_EPOCH
 AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION := 2
+AIDEN_BOARDTOOLS_REPRODUCIBLE_STATE_VERSION := 1
 SHELL:=/bin/bash
 MAKE=make
 AT?=@
@@ -357,6 +358,94 @@ define refresh_buildroot_config_state
 		printf '%s\n' "$$state" > "$$stamp"
 endef
 
+define refresh_boardtools_config_state
+	@set -e; \
+		stamp="$(SYSDRV_DIR)/out/.aiden_boardtools_config_state"; \
+		board_tool_state_files="$$( \
+			if git -C "$(SYSDRV_DIR)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+				git -C "$(SYSDRV_DIR)" ls-files \
+					Makefile \
+					Makefile.param \
+					cfg \
+					tools/board/Makefile.tools.board.mk \
+					tools/board/android-tools \
+					tools/board/dosfstools \
+					tools/board/e2fsprogs \
+					tools/board/eudev \
+					tools/board/exfatprogs \
+					tools/board/fio \
+					tools/board/gdb \
+					tools/board/i2c-tools \
+					tools/board/idb_bootconfig \
+					tools/board/memtester \
+					tools/board/mtd-utils \
+					tools/board/rk_ota \
+					tools/board/rndis \
+					tools/board/rockchip_test \
+					tools/board/strace \
+					tools/board/stressapptest \
+					tools/board/sysstat \
+					tools/board/toolkits \
+					tools/board/toolkits/openssl \
+					tools/board/toolkits/zlib; \
+			else \
+				find "$(SYSDRV_DIR)/cfg" "$(SYSDRV_DIR)/tools/board" \
+					-path "$(SYSDRV_DIR)/tools/board/buildroot" -prune -o \
+					-path "$(SYSDRV_DIR)/tools/board/busybox" -prune -o \
+					-path "$(SYSDRV_DIR)/tools/board/emmc" -prune -o \
+					-path "$(SYSDRV_DIR)/tools/board/mirror_select" -prune -o \
+					-type f -print | sed "s#^$(SYSDRV_DIR)/##"; \
+				printf '%s\n' Makefile Makefile.param; \
+			fi \
+		)"; \
+		state="$$( \
+			{ \
+				printf '%s\n' "AIDEN_BOARDTOOLS_REPRODUCIBLE_STATE_VERSION=$(AIDEN_BOARDTOOLS_REPRODUCIBLE_STATE_VERSION)"; \
+				printf '%s\n' "SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"; \
+				printf '%s\n' "CHIP=$(CHIP)"; \
+				printf '%s\n' "ARCH=$(ARCH)"; \
+				printf '%s\n' "BOOT_MEDIUM=$(BOOT_MEDIUM)"; \
+				printf '%s\n' "SYSDRV_CROSS=$(SYSDRV_CROSS)"; \
+				printf '%s\n' "SYSDRV_CROSS_CFLAGS=$(SYSDRV_CROSS_CFLAGS)"; \
+				printf '%s\n' "SYSDRV_OPTS=$(SYSDRV_OPTS)"; \
+				printf '%s\n' "SYSDRV_LIB_TYPE=$(SYSDRV_LIB_TYPE)"; \
+				printf '%s\n' "ENABLE_ADBD=$(ENABLE_ADBD)"; \
+				printf '%s\n' "ENABLE_EUDEV=$(ENABLE_EUDEV)"; \
+				printf '%s\n' "ENABLE_GDB=$(ENABLE_GDB)"; \
+				printf '%s\n' "ENABLE_RNDIS=$(ENABLE_RNDIS)"; \
+				printf '%s\n' "ENABLE_OTA=$(ENABLE_OTA)"; \
+				printf '%s\n' "ENABLE_ROCKCHIP_TEST=$(ENABLE_ROCKCHIP_TEST)"; \
+				printf '%s\n' "ENABLE_SYSSTAT=$(ENABLE_SYSSTAT)"; \
+				printf '%s\n' "ENABLE_FIO=$(ENABLE_FIO)"; \
+				printf '%s\n' "ENABLE_I2C_TOOLS=$(ENABLE_I2C_TOOLS)"; \
+				printf '%s\n' "ENABLE_EXFATPROGS=$(ENABLE_EXFATPROGS)"; \
+				printf '%s\n' "$$board_tool_state_files" | sort -u | while IFS= read -r path; do \
+					test -n "$$path" || continue; \
+					sha256sum "$(SYSDRV_DIR)/$$path"; \
+				done; \
+			} | sha256sum | awk '{print $$1}' \
+		)"; \
+		has_boardtools_output="$$(find "$(SYSDRV_DIR)/tools/board" -type d -name out -print -quit)"; \
+		needs_rebuild=0; \
+		if [ -n "$$has_boardtools_output" ]; then \
+			if [ ! -f "$$stamp" ]; then \
+				needs_rebuild=1; \
+			elif [ "$$(cat "$$stamp")" != "$$state" ]; then \
+				needs_rebuild=1; \
+			fi; \
+		fi; \
+		if [ "$$needs_rebuild" -eq 1 ]; then \
+			echo "Board tools reproducibility inputs changed; rebuilding generated board tool state"; \
+			$(MAKE) -C $(SYSDRV_DIR) tools_board-clean; \
+		fi; \
+		mkdir -p "$$(dirname "$$stamp")"; \
+		printf '%s\n' "$$state" > "$$stamp"
+endef
+
+.PHONY: refresh_boardtools_config_state
+refresh_boardtools_config_state:
+	$(call refresh_boardtools_config_state)
+
 export SYSDRV_DIR_OUT_PC
 export SYSDRV_DIR_OUT_BOARD
 export SYSDRV_DIR_OUT_ROOTFS
@@ -708,7 +797,8 @@ pctools_clean:
 #	build board tools
 ##########################################################################################
 include $(SYSDRV_DIR)/tools/board/Makefile.tools.board.mk
-boardtools: tools_board-builds
+boardtools: refresh_boardtools_config_state
+	$(MAKE) -C $(SYSDRV_DIR) tools_board-builds
 	@echo -e "$(C_GREEN) ==sysdrv== build tools which run on board   $(C_NORMAL)"
 
 boardtools_clean: tools_board-clean
