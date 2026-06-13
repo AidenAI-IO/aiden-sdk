@@ -3,6 +3,7 @@ SYSDRV_DIR=$(shell pwd)
 export LC_ALL=C
 SOURCE_DATE_EPOCH ?= 0
 export SOURCE_DATE_EPOCH
+AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION := 2
 SHELL:=/bin/bash
 MAKE=make
 AT?=@
@@ -330,6 +331,9 @@ define refresh_buildroot_config_state
 		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
 		state="$$( \
 			{ \
+				printf '%s\n' "AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION=$(AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION)"; \
+				printf '%s\n' "SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"; \
+				sha256sum "$(SYSDRV_DIR)/Makefile"; \
 				sha256sum "$(BUILDROOT_DIR)/$(BUILDROOT_VER)/.config"; \
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig"; \
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
