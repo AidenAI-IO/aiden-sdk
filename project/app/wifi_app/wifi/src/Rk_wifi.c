@@ -940,7 +940,9 @@ int wpa_wifi_enable(int enable)
 			usleep(200000);
 
 			//check wpa conf
-			if (access("/data/wpa_supplicant.conf", F_OK) == 0) {
+			if (access("/userdata/wpa_supplicant.conf", F_OK) == 0) {
+				exec_command_system("wpa_supplicant -B -i wlan0 -c /userdata/wpa_supplicant.conf -d");
+			} else if (access("/data/wpa_supplicant.conf", F_OK) == 0) {
 				exec_command_system("wpa_supplicant -B -i wlan0 -c /data/wpa_supplicant.conf -d");
 			} else if (access("/data/cfg/wpa_supplicant.conf", F_OK) == 0) {
 				exec_command_system("wpa_supplicant -B -i wlan0 -c /data/cfg/wpa_supplicant.conf -d");
