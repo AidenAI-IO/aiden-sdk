@@ -1,0 +1,110 @@
+From: aiden build <build@aiden.local>
+Subject: [PATCH] adb: provide std::span shim for pre-C++20 libstdc++ (GCC 8.3)
+
+The RV1106 uClibc cross toolchain ships GCC 8.3, whose libstdc++ has no
+<span> header. adb's compression_utils.h (pulled into the client via
+file_sync_client.cpp) uses std::span<char> for the brotli/lz4/zstd
+decoders. Add a minimal, self-contained std::span shim covering exactly
+the subset used, guarded by __cpp_lib_span so it stays inert on
+toolchains that already provide <span>.
+
+Aiden-local patch (not from upstream nmeum/android-tools).
+---
+diff --git a/vendor/core/adb/span_compat.h b/vendor/core/adb/span_compat.h
+new file mode 100644
+--- /dev/null
++++ b/vendor/core/adb/span_compat.h
+@@ -0,0 +1,82 @@
++/*
++ * Minimal std::span shim for toolchains whose libstdc++ predates <span>
++ * (e.g. GCC 8.3). Only the subset used by adb's compression_utils.h is
++ * provided. Inert on toolchains that already ship <span>.
++ *
++ * Added for the Aiden build (uClibc / GCC 8.3 cross toolchain).
++ */
++#pragma once
++
++#if defined(__has_include)
++#  if __has_include(<version>)
++#    include <version>
++#  endif
++#endif
++
++#if defined(__cpp_lib_span) && __cpp_lib_span >= 202002L
++#  include <span>
++#else
++
++#include <cstddef>
++#include <iterator>
++#include <type_traits>
++
++namespace std {
++
++template <typename T>
++class span {
++ public:
++  using element_type = T;
++  using value_type = typename std::remove_cv<T>::type;
++  using size_type = std::size_t;
++  using pointer = T*;
++  using reference = T&;
++  using iterator = T*;
++
++  constexpr span() noexcept : data_(nullptr), size_(0) {}
++  constexpr span(pointer ptr, size_type count) : data_(ptr), size_(count) {}
++  constexpr span(pointer first, pointer last)
++      : data_(first), size_(static_cast<size_type>(last - first)) {}
++
++  template <typename U,
++            typename = typename std::enable_if<
++                std::is_convertible<U (*)[], T (*)[]>::value>::type>
++  constexpr span(const span<U>& other) noexcept
++      : data_(other.data()), size_(other.size()) {}
++
++  constexpr pointer data() const noexcept { return data_; }
++  constexpr size_type size() const noexcept { return size_; }
++  constexpr size_type size_bytes() const noexcept { return size_ * sizeof(T); }
++  constexpr bool empty() const noexcept { return size_ == 0; }
++
++  constexpr reference operator[](size_type i) const { return data_[i]; }
++  constexpr iterator begin() const noexcept { return data_; }
++  constexpr iterator end() const noexcept { return data_ + size_; }
++
++  constexpr span<T> subspan(size_type offset) const {
++    return span<T>(data_ + offset, size_ - offset);
++  }
++  constexpr span<T> subspan(size_type offset, size_type count) const {
++    return span<T>(data_ + offset, count);
++  }
++  constexpr span<T> first(size_type count) const {
++    return span<T>(data_, count);
++  }
++  constexpr span<T> last(size_type count) const {
++    return span<T>(data_ + (size_ - count), count);
++  }
++
++ private:
++  pointer data_;
++  size_type size_;
++};
++
++// Deduction guides for the (ptr, size) and (ptr, ptr) constructors.
++template <typename T>
++span(T*, std::size_t) -> span<T>;
++template <typename T>
++span(T*, T*) -> span<T>;
++
++}  // namespace std
++
++#endif  // __cpp_lib_span
+--- a/vendor/core/adb/compression_utils.h
++++ b/vendor/core/adb/compression_utils.h
+@@ -18,7 +18,7 @@
+ 
+ #include <algorithm>
+ #include <memory>
+-#include <span>
++#include "span_compat.h"  // Aiden: std::span shim for GCC 8.3
+ 
+ #include <android-base/logging.h>
+ 
