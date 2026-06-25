@@ -51,7 +51,7 @@ ANDROID_TOOLS_AIDEN_CONF_OPTS = \
 # the build; BoringSSL's CMake also wants perl, taken from the host.
 
 define ANDROID_TOOLS_AIDEN_INSTALL_TARGET_CMDS
-	$(INSTALL) -D -m 0755 $(@D)/buildroot-build/vendor/adb \
+	$(INSTALL) -D -m 0755 $(@D)/vendor/adb \
 		$(TARGET_DIR)/usr/bin/adb
 endef
 
