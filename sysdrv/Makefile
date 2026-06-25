@@ -336,13 +336,12 @@ endef
 ANDROID_TOOLS_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/android-tools-aiden
 ANDROID_TOOLS_AIDEN_TARBALL := android-tools-aiden-30.0.5p1.tar.xz
 define inject_android_tools_aiden_pkg
-	mkdir -p $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden/patches
+	mkdir -p $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden
 	cp $(ANDROID_TOOLS_AIDEN_SRC)/Config.in \
 		$(ANDROID_TOOLS_AIDEN_SRC)/android-tools-aiden.mk \
 		$(ANDROID_TOOLS_AIDEN_SRC)/android-tools-aiden.hash \
+		$(ANDROID_TOOLS_AIDEN_SRC)/*.patch \
 		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden/
-	cp $(ANDROID_TOOLS_AIDEN_SRC)/patches/*.patch \
-		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden/patches/
 	mkdir -p $(BUILDROOT_DIR)/$(BUILDROOT_VER)/dl/android-tools-aiden
 	cp $(ANDROID_TOOLS_AIDEN_SRC)/$(ANDROID_TOOLS_AIDEN_TARBALL) \
 		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/dl/android-tools-aiden/
