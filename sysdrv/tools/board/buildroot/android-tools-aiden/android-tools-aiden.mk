@@ -28,7 +28,8 @@ ANDROID_TOOLS_AIDEN_LICENSE_FILES = vendor/boringssl/LICENSE
 
 # BoringSSL's build (vendored, via its own CMake) needs host Go + Perl;
 # the adb proto files need host protoc; the rest are the runtime libs the
-# adb client links against.
+# adb client links against. avahi provides the libdns_sd (Bonjour) compat
+# library that the restored mDNS code links against (<dns_sd.h>).
 ANDROID_TOOLS_AIDEN_DEPENDENCIES = \
 	host-go \
 	host-protobuf \
@@ -37,7 +38,8 @@ ANDROID_TOOLS_AIDEN_DEPENDENCIES = \
 	zlib \
 	brotli \
 	lz4 \
-	zstd
+	zstd \
+	avahi
 
 # CMake build. find_package(Protobuf) must use the host protoc but the
 # target libprotobuf; Buildroot's toolchain file points FIND_ROOT at the

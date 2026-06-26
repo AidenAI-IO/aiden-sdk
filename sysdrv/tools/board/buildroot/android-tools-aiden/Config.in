@@ -12,6 +12,13 @@ config BR2_PACKAGE_ANDROID_TOOLS_AIDEN
 	select BR2_PACKAGE_BROTLI
 	select BR2_PACKAGE_LZ4
 	select BR2_PACKAGE_ZSTD
+	# mDNS discovery (adb mdns check/services, wireless pairing) needs a
+	# Bonjour <dns_sd.h> backend. avahi's libdns_sd compatibility library
+	# provides it; the daemon does the actual discovery. dbus is already
+	# enabled on the board and is pulled in by the compat lib.
+	select BR2_PACKAGE_AVAHI
+	select BR2_PACKAGE_AVAHI_DAEMON
+	select BR2_PACKAGE_AVAHI_LIBDNSSD_COMPATIBILITY
 	help
 	  Modern Android Debug Bridge (adb) client built from the
 	  nmeum/android-tools 30.0.5p1 release, which vendors the AOSP
