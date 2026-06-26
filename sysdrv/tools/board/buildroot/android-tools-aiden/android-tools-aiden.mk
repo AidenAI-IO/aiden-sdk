@@ -42,8 +42,18 @@ ANDROID_TOOLS_AIDEN_DEPENDENCIES = \
 # CMake build. find_package(Protobuf) must use the host protoc but the
 # target libprotobuf; Buildroot's toolchain file points FIND_ROOT at the
 # host dir for programs and the staging dir for libs, which resolves both.
+#
+# BUILD_SHARED_LIBS=OFF forces the vendored BoringSSL crypto/ssl (and adb's
+# internal libs) to be STATIC, linked directly into the adb binary. Without
+# this, Buildroot's default BUILD_SHARED_LIBS=ON builds BoringSSL as
+# libcrypto.so/libssl.so which are never installed to the rootfs; adb then
+# resolves those NEEDED names against OpenSSL 1.1 at runtime and fails with
+# unresolved BoringSSL symbols (SPAKE2_*, EVP_AEAD_*, sk_*, HKDF, ...).
+# External deps (protobuf, brotli, lz4, usb, z, zstd) are prebuilt .so found
+# via find_*, so they remain dynamically linked and are unaffected.
 ANDROID_TOOLS_AIDEN_CONF_OPTS = \
 	-DCMAKE_BUILD_TYPE=Release \
+	-DBUILD_SHARED_LIBS=OFF \
 	-DANDROID_TOOLS_PATCH_VENDOR=OFF \
 	-DProtobuf_PROTOC_EXECUTABLE=$(HOST_DIR)/bin/protoc
 
