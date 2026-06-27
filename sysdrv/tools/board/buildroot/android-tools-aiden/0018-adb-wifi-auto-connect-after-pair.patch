@@ -1,0 +1,47 @@
+From: aiden build <build@aiden.local>
+Subject: [PATCH] adb_wifi: auto-connect immediately after successful pairing
+
+After pairing succeeds, the device switches from the pairing port to a connect
+port and advertises _adb-tls-connect._tcp. But mDNS discovery may take 5-15
+seconds to detect the new service, leaving the user waiting. Restore the
+immediate post-pair auto-connect call (adb_secure_connect_by_service_name)
+that was removed in patch 0014, but defer it to the MAIN fdevent thread via
+fdevent_run_on_main_thread to avoid the cross-thread data race:
+
+  - pair_service runs on its own SERVICE thread (create_service_thread)
+  - adb_secure_connect_by_service_name reads sAdbSecureConnectServices
+  - that registry is mutated (push_back/erase) by discovery callbacks on the
+    MAIN fdevent thread
+  - reading it from the pair thread without a lock is UB (concurrent
+    push_back can reallocate, invalidating iterators)
+
+Deferring to main thread sidesteps the race: the connect runs on the same
+thread that owns the registry. The lambda captures device_guid by value so
+it remains valid after adb_wifi_pair_device returns.
+
+Aiden-local patch (immediate post-pair auto-connect, thread-safe).
+---
+--- a/vendor/core/adb/client/adb_wifi.cpp
++++ b/vendor/core/adb/client/adb_wifi.cpp
+@@ -267,5 +267,20 @@
+ 
+     // Write to adb_known_hosts
+     write_known_host_to_file(device_guid);
+-    // Try to auto-connect.
++
++    // Try to auto-connect immediately after pairing. The device will switch from
++    // the pairing port to a connect port and advertise _adb-tls-connect, but mDNS
++    // discovery may take 5-15 seconds to see it. Trigger an immediate connect by
++    // service name (the GUID we just received) to avoid the user waiting.
++    //
++    // IMPORTANT: adb_secure_connect_by_service_name() reads sAdbSecureConnectServices,
++    // which is mutated by discovery callbacks on the MAIN fdevent thread. We're
++    // currently on the pair SERVICE thread (create_service_thread). Reading that
++    // vector without a lock is a data race (concurrent push_back during discovery
++    // can reallocate the vector, invalidating our iterator). Solution: defer the
++    // connect call to the main thread via fdevent_run_on_main_thread, so it runs
++    // on the same thread that mutates the registries.
++    fdevent_run_on_main_thread([device_guid]() {
++        adb_secure_connect_by_service_name(device_guid.c_str());
++    });
+ }
