@@ -20,8 +20,8 @@ Aiden-local patch (not from upstream nmeum/android-tools).
  
  #define TRACE_TAG SOCKETS
  
-+#include "adb_string_view_compat.h"
  #include "sysdeps.h"
++#include "adb_string_view_compat.h"
  
  #include <ctype.h>
 @@ -416,9 +417,9 @@
@@ -184,8 +184,8 @@ Aiden-local patch (not from upstream nmeum/android-tools).
  
  #define TRACE_TAG ADB
  
-+#include "adb_string_view_compat.h"
  #include "sysdeps.h"
++#include "adb_string_view_compat.h"
  #include "adb.h"
  
 @@ -1099,7 +1100,7 @@
@@ -221,8 +221,8 @@ Aiden-local patch (not from upstream nmeum/android-tools).
  
  #define TRACE_TAG TRANSPORT
  
-+#include "adb_string_view_compat.h"
  #include "sysdeps.h"
++#include "adb_string_view_compat.h"
  #include "transport.h"
  
 @@ -90,7 +91,7 @@

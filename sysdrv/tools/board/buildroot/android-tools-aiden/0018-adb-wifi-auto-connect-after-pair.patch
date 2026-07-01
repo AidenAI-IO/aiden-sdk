@@ -20,17 +20,18 @@ Aiden-local patch (post-pair auto-connect, retry against discovery race).
 ---
 --- a/vendor/core/adb/client/adb_wifi.cpp
 +++ b/vendor/core/adb/client/adb_wifi.cpp
-@@ -16,7 +16,9 @@
+@@ -16,7 +16,10 @@
  
  #include "adb_wifi.h"
  
 +#include <chrono>
  #include <fstream>
 +#include <future>
++#include <memory>
  #include <random>
  #include <thread>
  
-@@ -31,6 +33,7 @@
+@@ -31,6 +34,7 @@
  #include "adb_known_hosts.pb.h"
  #include "adb_utils.h"
  #include "client/adb_client.h"
@@ -38,7 +39,7 @@ Aiden-local patch (post-pair auto-connect, retry against discovery race).
  #include "sysdeps.h"
  
  using adbwifi::pairing::PairingClient;
-@@ -267,5 +270,36 @@
+@@ -263,5 +267,40 @@
  
      // Write to adb_known_hosts
      write_known_host_to_file(device_guid);
@@ -60,6 +61,7 @@ Aiden-local patch (post-pair auto-connect, retry against discovery race).
 +    std::thread([device_guid]() {
 +        constexpr int kMaxAttempts = 15;                       // ~30s total
 +        constexpr auto kRetryDelay = std::chrono::seconds(2);
++        constexpr auto kMainThreadWait = std::chrono::seconds(5);
 +        for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
 +            auto connected_promise = std::make_shared<std::promise<bool>>();
 +            std::future<bool> connected = connected_promise->get_future();
@@ -67,6 +69,9 @@ Aiden-local patch (post-pair auto-connect, retry against discovery race).
 +                connected_promise->set_value(
 +                        adb_secure_connect_by_service_name(device_guid.c_str()));
 +            });
++            if (connected.wait_for(kMainThreadWait) != std::future_status::ready) {
++                return;
++            }
 +            if (connected.get()) {
 +                return;  // Connected successfully
 +            }

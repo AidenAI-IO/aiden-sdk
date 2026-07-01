@@ -33,7 +33,7 @@ Aiden-local patch (re-enables mDNS that nmeum disabled for the client).
  #include "client/pairing/pairing_client.h"
  
  #include "adb_auth.h"
-@@ -179,16 +180,25 @@
+@@ -179,16 +180,31 @@
  
  void adb_wifi_pair_device(const std::string& host, const std::string& password,
                            std::string& response) {
@@ -55,8 +55,14 @@ Aiden-local patch (re-enables mDNS that nmeum disabled for the client).
 -            return;
 -        }
 -        if (port <= 0 || port > 65535) {
-+            // Not a literal address; try to resolve it as an mDNS pairing service name.
-+            mdns_info = mdns_get_pairing_service_info(host);
++            // Not a literal address; resolve the mDNS pairing service name on
++            // the main fdevent thread, which owns the service registries.
++            std::promise<std::optional<MdnsInfo>> mdns_lookup_promise;
++            std::future<std::optional<MdnsInfo>> mdns_lookup = mdns_lookup_promise.get_future();
++            fdevent_run_on_main_thread([host, &mdns_lookup_promise]() {
++                mdns_lookup_promise.set_value(mdns_get_pairing_service_info(host));
++            });
++            mdns_info = mdns_lookup.get();
 +            if (!mdns_info.has_value()) {
 +                response = "Failed to parse address for pairing: " + err;
 +                return;
@@ -65,7 +71,7 @@ Aiden-local patch (re-enables mDNS that nmeum disabled for the client).
              response = "Invalid port while parsing address [" + host + "]";
              return;
          }
-@@ -222,7 +232,10 @@
+@@ -222,7 +238,10 @@
  
      PairingResultWaiter waiter;
      std::unique_lock<std::mutex> lock(waiter.mutex_);

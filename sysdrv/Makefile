@@ -347,8 +347,13 @@ define inject_android_tools_aiden_pkg
 		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/dl/android-tools-aiden/
 	grep -q 'package/android-tools-aiden/Config.in' \
 		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in || \
-		sed -i 's|\(\s*\)source "package/android-tools/Config.in"|\1source "package/android-tools/Config.in"\n\1source "package/android-tools-aiden/Config.in"|' \
-			$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in
+		{ \
+			sed -i 's|\(\s*\)source "package/android-tools/Config.in"|\1source "package/android-tools/Config.in"\n\1source "package/android-tools-aiden/Config.in"|' \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in; \
+			grep -q 'package/android-tools-aiden/Config.in' \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in || \
+				{ echo "failed to inject android-tools-aiden into package/Config.in" >&2; exit 1; }; \
+		}
 endef
 
 define refresh_buildroot_config_state

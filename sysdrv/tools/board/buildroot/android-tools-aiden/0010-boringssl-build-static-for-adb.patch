@@ -1,41 +1,40 @@
 From: aiden build <build@aiden.local>
 Subject: [PATCH] boringssl: build static so symbols link into adb
 
-Buildroot configures CMake with -DBUILD_SHARED_LIBS=ON, so the vendored
-BoringSSL builds libcrypto.so/libssl.so. Those .so files are NOT installed
-to the target rootfs (only the adb binary is), and adb's RPATH points at
-the build tree. On the device the dynamic linker therefore resolves
-libcrypto.so/libssl.so to the rootfs OpenSSL 1.1.1, which lacks the
-BoringSSL-only symbols adb needs, and adb aborts at startup:
+android-tools-aiden.mk already configures CMake with
+-DBUILD_SHARED_LIBS=OFF, so the vendored BoringSSL links statically into
+adb. Keep that package-wide static build, but force
+CMAKE_POSITION_INDEPENDENT_CODE on only around the boringssl
+subdirectory because adb is a PIE, then restore the previous PIC setting
+before later vendored targets are added.
+
+This keeps the BoringSSL-only symbols baked into adb, avoiding runtime
+resolution against the rootfs OpenSSL 1.1.1, which lacks symbols adb
+needs and aborts at startup:
 
   /usr/bin/adb: symbol 'SPAKE2_CTX_new': can't resolve symbol
   /usr/bin/adb: symbol 'EVP_AEAD_CTX_init': can't resolve symbol
   ... (SPAKE2, EVP_AEAD, CRYPTO_BUFFER, sk_*, HKDF, etc.)
 
-Force BoringSSL to build as static libraries (with position-independent
-code, since adb is a PIE) by toggling BUILD_SHARED_LIBS off only around
-its add_subdirectory. Its symbols then link directly into the adb binary,
-and the external shared deps (protobuf, brotli, lz4, usb, z, zstd), which
-ARE installed to the rootfs, remain dynamically linked.
+External shared deps (protobuf, brotli, lz4, usb, z, zstd), which ARE
+installed to the rootfs, remain dynamically linked.
 
 Aiden-local patch (not from upstream nmeum/android-tools).
 ---
 --- a/vendor/CMakeLists.txt
 +++ b/vendor/CMakeLists.txt
-@@ -1,7 +1,16 @@
+@@ -1,7 +1,14 @@
  # TODO: https://cmake.org/cmake/help/v3.0/module/ExternalProject.html
  # To patch the submodule
  
-+# Aiden: force BoringSSL to build as STATIC libs (with PIC) so its
-+# symbols are baked into the adb PIE binary. Buildroot sets
-+# BUILD_SHARED_LIBS=ON globally, which would otherwise produce
-+# libcrypto.so/libssl.so that are never installed to the rootfs,
-+# leaving adb to pick up the rootfs OpenSSL (missing BoringSSL syms).
-+set(_aiden_saved_shared ${BUILD_SHARED_LIBS})
-+set(BUILD_SHARED_LIBS OFF)
++# Aiden: android-tools-aiden.mk already forces BUILD_SHARED_LIBS=OFF for
++# the whole package, so BoringSSL already builds static. Only force PIC
++# here because adb is a PIE, and restore the previous setting so later
++# vendored targets do not inherit the boringssl-only override.
++set(_aiden_saved_pic ${CMAKE_POSITION_INDEPENDENT_CODE})
 +set(CMAKE_POSITION_INDEPENDENT_CODE ON)
  add_subdirectory(boringssl EXCLUDE_FROM_ALL)
-+set(BUILD_SHARED_LIBS ${_aiden_saved_shared})
++set(CMAKE_POSITION_INDEPENDENT_CODE ${_aiden_saved_pic})
  set(android-vendored
  	avb
  	base

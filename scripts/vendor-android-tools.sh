@@ -69,28 +69,49 @@ find . -name .git -maxdepth 3 -exec rm -rf {} + 2>/dev/null || true
 rm -rf .github patches
 
 echo ">> defaulting ANDROID_TOOLS_PATCH_VENDOR OFF (sources already patched)"
+if ! grep -Eq 'option\(ANDROID_TOOLS_PATCH_VENDOR .* ON\)' CMakeLists.txt; then
+  echo "error: expected ANDROID_TOOLS_PATCH_VENDOR ON toggle in CMakeLists.txt" >&2
+  exit 1
+fi
 sed -i \
   's/\(option(ANDROID_TOOLS_PATCH_VENDOR .*\) ON)/\1 OFF)/' \
   CMakeLists.txt
+if grep -Eq 'option\(ANDROID_TOOLS_PATCH_VENDOR .* ON\)' CMakeLists.txt || \
+   ! grep -Eq 'option\(ANDROID_TOOLS_PATCH_VENDOR .* OFF\)' CMakeLists.txt; then
+  echo "error: failed to disable ANDROID_TOOLS_PATCH_VENDOR in CMakeLists.txt" >&2
+  exit 1
+fi
 
 echo ">> trimming vendor build to adb client only"
 python3 - <<'PY'
 p = "vendor/CMakeLists.txt"
 s = open(p).read()
-s = s.replace(
-    """include(CMakeLists.libbase.txt)
+old_includes = """include(CMakeLists.libbase.txt)
 include(CMakeLists.libandroidfw.txt)
 include(CMakeLists.adb.txt)
 include(CMakeLists.sparse.txt)
 include(CMakeLists.fastboot.txt)
-include(CMakeLists.mke2fs.txt)""",
-    """# Aiden: board uses adb client (host mode) only.
+include(CMakeLists.mke2fs.txt)"""
+new_includes = """# Aiden: board uses adb client (host mode) only.
 include(CMakeLists.libbase.txt)
-include(CMakeLists.adb.txt)""")
-s = s.replace(
-    'install(TARGETS adb fastboot "${ANDROID_MKE2FS_NAME}"\n\tsimg2img img2simg append2simg DESTINATION bin)',
-    "install(TARGETS adb DESTINATION bin)")
+include(CMakeLists.adb.txt)"""
+old_install = 'install(TARGETS adb fastboot "${ANDROID_MKE2FS_NAME}"\n\tsimg2img img2simg append2simg DESTINATION bin)'
+new_install = "install(TARGETS adb DESTINATION bin)"
+
+if old_includes not in s:
+    raise SystemExit("error: expected vendor include block not found in vendor/CMakeLists.txt")
+if old_install not in s:
+    raise SystemExit("error: expected vendor install block not found in vendor/CMakeLists.txt")
+
+s = s.replace(old_includes, new_includes, 1)
+s = s.replace(old_install, new_install, 1)
 open(p, "w").write(s)
+
+updated = open(p).read()
+if old_includes in updated or old_install in updated:
+    raise SystemExit("error: vendor/CMakeLists.txt still contains untrimmed android-tools targets")
+if new_includes not in updated or new_install not in updated:
+    raise SystemExit("error: vendor/CMakeLists.txt trimming replacements did not apply")
 PY
 
 echo ">> pruning unused vendor trees"

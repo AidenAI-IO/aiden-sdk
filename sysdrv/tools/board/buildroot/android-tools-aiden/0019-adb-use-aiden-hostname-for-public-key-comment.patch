@@ -5,7 +5,7 @@
  #include <openssl/bn.h>
  #include <openssl/rsa.h>
 -#include <sysdeps/env.h>
-+#include <stdlib.h>
++#include <cstdlib>
  
  namespace adb {
  namespace crypto {
@@ -17,7 +17,7 @@
 -    out->append(sysdeps::GetLoginNameUTF8());
 -    out->append("@");
 -    out->append(sysdeps::GetHostNameUTF8());
-+    const char* hostname = getenv("AIDEN_HOSTNAME");
++    const char* hostname = std::getenv("AIDEN_HOSTNAME");
 +    out->append(" ");
 +    out->append((hostname != nullptr && hostname[0] != '\0') ? hostname : "aidenadb");
      return true;
