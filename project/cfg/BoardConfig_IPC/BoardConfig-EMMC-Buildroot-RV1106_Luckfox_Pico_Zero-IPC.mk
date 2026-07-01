@@ -84,8 +84,9 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-# Disabled bt fragment for boot-item slimming; keep file for easy rollback.
-# export RK_KERNEL_DEFCONFIG_FRAGMENT=rv1106-bt.config
+# Keep Bluetooth disabled for boot-item slimming while enabling compressed
+# in-memory swap to reduce OOM risk under transient agent/frame workloads.
+export RK_KERNEL_DEFCONFIG_FRAGMENT=aiden-zram.config
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
