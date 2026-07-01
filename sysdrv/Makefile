@@ -325,6 +325,35 @@ define sync_buildroot_board_config
 	cp ${HCITOOL_TOOL_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/bluez5_utils/
 	cp ${MPV_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/mpv/
 	cp ${BUSYBOX_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/busybox/
+	$(call inject_android_tools_aiden_pkg)
+endef
+
+# android-tools-aiden is an out-of-tree Buildroot package (modern adb
+# client, reports 1.0.41). The buildroot tree is extracted fresh from a
+# tarball at build time, so the package source, its vendored tarball and
+# its registration in package/Config.in must be re-injected after every
+# extraction.
+ANDROID_TOOLS_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/android-tools-aiden
+ANDROID_TOOLS_AIDEN_TARBALL := android-tools-aiden-30.0.5p1.tar.xz
+define inject_android_tools_aiden_pkg
+	mkdir -p $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden
+	cp $(ANDROID_TOOLS_AIDEN_SRC)/Config.in \
+		$(ANDROID_TOOLS_AIDEN_SRC)/android-tools-aiden.mk \
+		$(ANDROID_TOOLS_AIDEN_SRC)/android-tools-aiden.hash \
+		$(ANDROID_TOOLS_AIDEN_SRC)/*.patch \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/android-tools-aiden/
+	mkdir -p $(BUILDROOT_DIR)/$(BUILDROOT_VER)/dl/android-tools-aiden
+	cp $(ANDROID_TOOLS_AIDEN_SRC)/$(ANDROID_TOOLS_AIDEN_TARBALL) \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/dl/android-tools-aiden/
+	grep -q 'package/android-tools-aiden/Config.in' \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in || \
+		{ \
+			sed -i 's|\(\s*\)source "package/android-tools/Config.in"|\1source "package/android-tools/Config.in"\n\1source "package/android-tools-aiden/Config.in"|' \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in; \
+			grep -q 'package/android-tools-aiden/Config.in' \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/Config.in || \
+				{ echo "failed to inject android-tools-aiden into package/Config.in" >&2; exit 1; }; \
+		}
 endef
 
 define refresh_buildroot_config_state
@@ -340,6 +369,7 @@ define refresh_buildroot_config_state
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
 				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
 				find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
+				find "$(ANDROID_TOOLS_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
 			} | sha256sum | awk '{print $$1}' \
 		)"; \
 		needs_rebuild=0; \

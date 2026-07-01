@@ -110,6 +110,10 @@ export RK_BUILD_APP_TO_OEM_PARTITION=y
 # Disabled for production boot-item slimming.
 # export RK_ENABLE_ROCKCHIP_TEST=y
 
+# Aiden uses the board as an ADB host/client for external Android devices.
+# Keep SDK adbd gadget support disabled.
+export RK_ENABLE_ADBD=n
+
 # enable rockchip wifi
 export RK_ENABLE_WIFI=y
 export RK_ENABLE_WIFI_CHIP=AIC8800DC
