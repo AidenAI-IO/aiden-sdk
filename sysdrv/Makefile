@@ -356,22 +356,26 @@ define inject_android_tools_aiden_pkg
 		}
 endef
 
+define buildroot_config_state_value
+$$( \
+	{ \
+		printf '%s\n' "AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION=$(AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION)"; \
+		printf '%s\n' "SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"; \
+		sha256sum "$(SYSDRV_DIR)/Makefile"; \
+		sha256sum "$(BUILDROOT_DIR)/$(BUILDROOT_VER)/.config"; \
+		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig"; \
+		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
+		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
+		find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
+		find "$(ANDROID_TOOLS_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
+	} | sha256sum | awk '{print $$1}' \
+)
+endef
+
 define refresh_buildroot_config_state
 	@set -e; \
 		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
-		state="$$( \
-			{ \
-				printf '%s\n' "AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION=$(AIDEN_BUILDROOT_REPRODUCIBLE_STATE_VERSION)"; \
-				printf '%s\n' "SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"; \
-				sha256sum "$(SYSDRV_DIR)/Makefile"; \
-				sha256sum "$(BUILDROOT_DIR)/$(BUILDROOT_VER)/.config"; \
-				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig"; \
-				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
-				sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
-				find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
-				find "$(ANDROID_TOOLS_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
-			} | sha256sum | awk '{print $$1}' \
-		)"; \
+		state="$(call buildroot_config_state_value)"; \
 		needs_rebuild=0; \
 		if [ -d "$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/build" ]; then \
 			if [ ! -f "$$stamp" ]; then \
@@ -383,7 +387,13 @@ define refresh_buildroot_config_state
 		if [ "$$needs_rebuild" -eq 1 ]; then \
 			echo "Buildroot configuration changed; rebuilding generated Buildroot state"; \
 			$(MAKE) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) clean; \
-		fi; \
+		fi
+endef
+
+define write_buildroot_config_state_stamp
+	@set -e; \
+		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
+		state="$(call buildroot_config_state_value)"; \
 		mkdir -p "$$(dirname "$$stamp")"; \
 		printf '%s\n' "$$state" > "$$stamp"
 endef
@@ -790,6 +800,7 @@ ifeq ($(SYSDRV_BUILD_RAMDISK_FLAG),YES)
 else
 	tar xf $(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/images/rootfs.tar -C $(SYSDRV_DIR_OUT_ROOTFS)
 endif
+	$(call write_buildroot_config_state_stamp)
 
 buildroot_clean:
 	$(AT)rm -rf $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
