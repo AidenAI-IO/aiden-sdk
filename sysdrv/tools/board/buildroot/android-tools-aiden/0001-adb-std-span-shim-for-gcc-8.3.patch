@@ -2,11 +2,11 @@ From: aiden build <build@aiden.local>
 Subject: [PATCH] adb: provide std::span shim for pre-C++20 libstdc++ (GCC 8.3)
 
 The RV1106 uClibc cross toolchain ships GCC 8.3, whose libstdc++ has no
-<span> header. adb's compression_utils.h (pulled into the client via
-file_sync_client.cpp) uses std::span<char> for the brotli/lz4/zstd
-decoders. Add a minimal, self-contained adb_compat::span shim covering
-exactly the subset used, guarded by __cpp_lib_span so it stays inert on
-toolchains that already provide <span>.
+<span> header. adb's compression_utils.h and file_sync_client.cpp use
+std::span<char> for the brotli/lz4/zstd decoders. Add a minimal,
+self-contained adb_compat::span shim covering exactly the subset used,
+guarded by __cpp_lib_span so it stays inert on toolchains that already
+provide <span>.
 
 Aiden-local patch (not from upstream nmeum/android-tools).
 ---
@@ -235,6 +235,27 @@ new file mode 100644
 
 -        *output = std::span<char>(output_buffer_.data(), out.pos);
 +        *output = CharSpan(output_buffer_.data(), out.pos);
-
+ 
          if (finished_) {
              return input_buffer_.empty() && zstd_done_ ? DecodeResult::Done
+diff --git a/vendor/core/adb/client/file_sync_client.cpp b/vendor/core/adb/client/file_sync_client.cpp
+--- a/vendor/core/adb/client/file_sync_client.cpp
++++ b/vendor/core/adb/client/file_sync_client.cpp
+@@ -1155,7 +1155,7 @@ static bool sync_recv_v2(SyncConnection& sc, const char* rpath, const char* lpat
+             decoder_storage;
+     Decoder* decoder = nullptr;
+ 
+-    std::span buffer_span(buffer.data(), buffer.size());
++    CharSpan buffer_span(buffer.data(), buffer.size());
+     switch (compression) {
+         case CompressionType::None:
+             decoder = &decoder_storage.emplace<NullDecoder>(buffer_span);
+@@ -1209,7 +1209,7 @@ static bool sync_recv_v2(SyncConnection& sc, const char* rpath, const char* lpat
+         }
+ 
+         while (true) {
+-            std::span<char> output;
++            CharSpan output;
+             DecodeResult result = decoder->Decode(&output);
+ 
+             if (result == DecodeResult::Error) {
