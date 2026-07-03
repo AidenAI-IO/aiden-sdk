@@ -372,6 +372,10 @@ $$( \
 )
 endef
 
+define sync_buildroot_config_state_inputs
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig -C $(BUILDROOT_DIR)/$(BUILDROOT_VER)
+endef
+
 define refresh_buildroot_config_state
 	@set -e; \
 		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
@@ -782,6 +786,7 @@ buildroot: prepare
 
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) $(BUILDROOT_DEFCONFIG) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
 	$(SYSDRV_DIR)/tools/board/mirror_select/buildroot_mirror_select.sh $(BUILDROOT_DIR)/$(BUILDROOT_VER)/.config
+	$(call sync_buildroot_config_state_inputs)
 	$(call refresh_buildroot_config_state)
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) source -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -j$(SYSDRV_JOBS) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
