@@ -111,6 +111,8 @@
 	no-sdio;
 	no-mmc;
 	supports-sd;
+	/* No card-detect line is wired; poll the slot so hot-plug works. */
+	broken-cd;
 	bus-width = <4>;
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
