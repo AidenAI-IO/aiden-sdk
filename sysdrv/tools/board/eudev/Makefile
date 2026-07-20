@@ -80,6 +80,11 @@ all: kmod util-linux
 		rm -f lib/udev/cdrom_id ;\
 	popd;
 	@cp -f $(CURRENT_DIR)/rules/* $(CURRENT_DIR)/$(PKG_BIN)/lib/udev/rules.d/ ;
+# The SD auto-mount rule was removed: the agent's StorageManager is the single
+# owner of SD card mounting. This eudev build does not honor same-name rule
+# masking from /etc, so the rule must not exist at all. Delete it explicitly
+# so cached out/ trees from earlier builds cannot resurrect it.
+	@rm -f $(CURRENT_DIR)/$(PKG_BIN)/lib/udev/rules.d/61-sd-cards-auto-mount.rules ;
 	@mkdir -p $(CURRENT_DIR)/$(PKG_BIN)/etc/init.d ;
 	@cp -f S10udev $(CURRENT_DIR)/$(PKG_BIN)/etc/init.d ;
 	@mkdir -p $(CURRENT_DIR)/$(PKG_BIN)/usr/bin ;

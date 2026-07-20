@@ -114,6 +114,10 @@ export RK_BUILD_APP_TO_OEM_PARTITION=y
 # Keep SDK adbd gadget support disabled.
 export RK_ENABLE_ADBD=n
 
+# mkfs.exfat/fsck.exfat for the SD-card exFAT format option
+# (Makefile.param defaults this to n).
+export RK_ENABLE_EXFATPROGS=y
+
 # enable rockchip wifi
 export RK_ENABLE_WIFI=y
 export RK_ENABLE_WIFI_CHIP=AIC8800DC
