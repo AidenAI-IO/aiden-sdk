@@ -1,0 +1,43 @@
+From: aiden build <build@aiden.local>
+Subject: [PATCH] node: skip auxv secure-exec probe when header is absent
+
+src/node_main.cc includes <sys/auxv.h> and calls getauxval(AT_SECURE) for
+all Linux builds. The Luckfox Buildroot target uses a uClibc toolchain whose
+sysroot does not provide sys/auxv.h, so the target Node.js 16.20.0 build
+fails with:
+
+  src/node_main.cc:92:10: fatal error: sys/auxv.h: No such file or directory
+
+Use the auxv secure-exec probe only when the header is available. On targets
+without the header, linux_at_secure keeps its existing false default and
+Node.js still falls back to the uid/gid mismatch checks in SafeGetenv().
+
+Aiden-local patch.
+---
+--- a/src/node_main.cc
++++ b/src/node_main.cc
+@@ -89,7 +89,15 @@
+ #else
+ // UNIX
+ #ifdef __linux__
++#if defined(__has_include)
++#if __has_include(<sys/auxv.h>)
+ #include <sys/auxv.h>
++#define NODE_HAVE_GETAUXVAL 1
++#endif
++#elif !defined(__UCLIBC__)
++#include <sys/auxv.h>
++#define NODE_HAVE_GETAUXVAL 1
++#endif
+ #endif  // __linux__
+ #if defined(__POSIX__) && defined(NODE_SHARED_MODE)
+ #include <string.h>
+@@ -117,7 +125,7 @@
+   }
+ #endif
+ 
+-#if defined(__linux__)
++#if defined(NODE_HAVE_GETAUXVAL)
+   node::per_process::linux_at_secure = getauxval(AT_SECURE);
+ #endif
+   // Disable stdio buffering, it interacts poorly with printf()
