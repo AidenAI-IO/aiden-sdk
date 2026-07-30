@@ -364,9 +364,17 @@ endef
 # for 0.7.0, which is still autotools, so the integration is an in-place
 # overwrite of package/opkg rather than an out-of-tree package: both
 # BR2_PACKAGE_OPKG and its package/Config.in registration already exist, so no
-# sed injection is needed here. As with android-tools-aiden, the buildroot tree
-# is extracted fresh from a tarball at build time, so the overwrite has to be
-# re-applied after every extraction.
+# sed injection is needed here.
+#
+# The overwrite is re-applied on every build because the buildroot tree is not
+# always re-extracted: buildroot_create does start from a fresh tarball, but the
+# plain buildroot target only extracts when the tree is absent, and the
+# `make clean` triggered by a config-state change clears output/ and leaves
+# package/ alone. So the patch set has to be *synced*, not merely topped up --
+# removing or renaming a patch under opkg-aiden must remove it from the tree
+# too, or a stale patch keeps being applied and V10 reproducibility breaks.
+# Upstream 2023.02.6 ships no patches for this package, so clearing them all is
+# what restores the baseline.
 OPKG_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/opkg-aiden
 define inject_opkg_aiden_pkg
 	cp $(OPKG_AIDEN_SRC)/opkg.mk \
@@ -374,6 +382,7 @@ define inject_opkg_aiden_pkg
 		$(OPKG_AIDEN_SRC)/Config.in \
 		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/
 	@set -e; \
+		rm -f $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/*.patch; \
 		if ls $(OPKG_AIDEN_SRC)/*.patch >/dev/null 2>&1; then \
 			cp $(OPKG_AIDEN_SRC)/*.patch \
 				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/; \
