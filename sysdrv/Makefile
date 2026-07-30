@@ -328,6 +328,7 @@ define sync_buildroot_board_config
 	cp ${BUSYBOX_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/busybox/
 	cp ${NODEJS_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/nodejs/
 	$(call inject_android_tools_aiden_pkg)
+	$(call inject_opkg_aiden_pkg)
 endef
 
 # android-tools-aiden is an out-of-tree Buildroot package (modern adb
@@ -358,6 +359,30 @@ define inject_android_tools_aiden_pkg
 		}
 endef
 
+# opkg is an in-tree Buildroot package, but 2023.02.6 carries an older release
+# (0.4.5). opkg-aiden holds a verbatim backport of Buildroot master's recipe
+# for 0.7.0, which is still autotools, so the integration is an in-place
+# overwrite of package/opkg rather than an out-of-tree package: both
+# BR2_PACKAGE_OPKG and its package/Config.in registration already exist, so no
+# sed injection is needed here. As with android-tools-aiden, the buildroot tree
+# is extracted fresh from a tarball at build time, so the overwrite has to be
+# re-applied after every extraction.
+OPKG_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/opkg-aiden
+define inject_opkg_aiden_pkg
+	cp $(OPKG_AIDEN_SRC)/opkg.mk \
+		$(OPKG_AIDEN_SRC)/opkg.hash \
+		$(OPKG_AIDEN_SRC)/Config.in \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/
+	@set -e; \
+		if ls $(OPKG_AIDEN_SRC)/*.patch >/dev/null 2>&1; then \
+			cp $(OPKG_AIDEN_SRC)/*.patch \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/; \
+		fi; \
+		grep -q '^OPKG_VERSION = 0.7.0$$' \
+			$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/opkg.mk || \
+			{ echo "failed to inject opkg-aiden into package/opkg" >&2; exit 1; }
+endef
+
 define buildroot_config_state_value
 $$( \
 	{ \
@@ -369,7 +394,7 @@ $$( \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
 		find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" "$(NODEJS_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
-		find "$(ANDROID_TOOLS_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
+		find "$(ANDROID_TOOLS_AIDEN_SRC)" "$(OPKG_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
 	} | sha256sum | awk '{print $$1}' \
 )
 endef
