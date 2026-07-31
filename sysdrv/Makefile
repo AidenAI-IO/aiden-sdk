@@ -378,6 +378,19 @@ define sync_buildroot_config_state_inputs
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig -C $(BUILDROOT_DIR)/$(BUILDROOT_VER)
 endef
 
+# The stamp records which configuration produced the tree currently in
+# output/. It is provenance, not a record of the last successful build, so it
+# is written here -- before the packages are built -- and in the same shell
+# block as the clean decision that consumes it.
+#
+# Writing it only after a successful build looks safer but is strictly worse: a
+# build that dies halfway still leaves generated files behind, and leaving the
+# previous configuration's hash in place makes the next build with that
+# configuration conclude nothing changed and reuse packages configured for a
+# different one. That is how a branch enabling BR2_PACKAGE_LIBARCHIVE (pulled
+# in by opkg) left mpv configured with --enable-libarchive in a tree main then
+# reused, breaking every main build afterwards. Keep the write in this define:
+# splitting it back out is what let the two drift apart in the first place.
 define refresh_buildroot_config_state
 	@set -e; \
 		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
@@ -393,13 +406,7 @@ define refresh_buildroot_config_state
 		if [ "$$needs_rebuild" -eq 1 ]; then \
 			echo "Buildroot configuration changed; rebuilding generated Buildroot state"; \
 			$(MAKE) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) clean; \
-		fi
-endef
-
-define write_buildroot_config_state_stamp
-	@set -e; \
-		stamp="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/.aiden_buildroot_config_state"; \
-		state="$(call buildroot_config_state_value)"; \
+		fi; \
 		mkdir -p "$$(dirname "$$stamp")"; \
 		printf '%s\n' "$$state" > "$$stamp"
 endef
@@ -807,7 +814,6 @@ ifeq ($(SYSDRV_BUILD_RAMDISK_FLAG),YES)
 else
 	tar xf $(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/images/rootfs.tar -C $(SYSDRV_DIR_OUT_ROOTFS)
 endif
-	$(call write_buildroot_config_state_stamp)
 
 buildroot_clean:
 	$(AT)rm -rf $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
