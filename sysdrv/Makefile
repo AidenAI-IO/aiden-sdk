@@ -329,6 +329,38 @@ define sync_buildroot_board_config
 	cp ${NODEJS_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/nodejs/
 	$(call inject_android_tools_aiden_pkg)
 	$(call inject_opkg_aiden_pkg)
+	$(call pin_libarchive_optouts)
+endef
+
+# opkg drags in libarchive: its Config.in selects BR2_PACKAGE_LIBARCHIVE and its
+# recipe hard-depends on it. Buildroot packages that key off that symbol then
+# silently gain a feature they never had here before -- and mpv 0.33.1 does not
+# survive it. mpv's stream/stream_libarchive.h declares a POSIX-2008 `locale_t`,
+# which this uClibc-ng toolchain never typedefs (bits/uClibc_locale.h only
+# provides `__locale_t`, and there is no xlocale.h), so enabling the feature
+# fails the build outright with "unknown type name 'locale_t'".
+#
+# Adding a package manager must not change what unrelated packages do, so every
+# consumer is pinned back to the state it had before opkg existed. samba4 is
+# pinned for the same reason even though it has not been observed to fail: its
+# libarchive feature (smbclient tar support) is unused here, and it builds late
+# and slowly, so discovering a problem there costs a full CI cycle for nothing.
+# Drop a line below if that package's libarchive feature is ever actually wanted.
+#
+# Both substitutions are idempotent: after the rewrite the matched pattern is
+# gone, so re-running on an already-patched tree is a no-op.
+define pin_libarchive_optouts
+	@set -e; \
+		mpv_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/mpv/mpv.mk"; \
+		samba4_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/samba4/samba4.mk"; \
+		sed -i 's|^MPV_CONF_OPTS += --enable-libarchive$$|MPV_CONF_OPTS += --disable-libarchive|' "$$mpv_mk"; \
+		sed -i 's|^SAMBA4_CONF_OPTS += --with-libarchive$$|SAMBA4_CONF_OPTS += --without-libarchive|' "$$samba4_mk"; \
+		if grep -q -- '--enable-libarchive' "$$mpv_mk"; then \
+			echo "failed to pin mpv off libarchive" >&2; exit 1; \
+		fi; \
+		if grep -q -- '+= --with-libarchive' "$$samba4_mk"; then \
+			echo "failed to pin samba4 off libarchive" >&2; exit 1; \
+		fi
 endef
 
 # android-tools-aiden is an out-of-tree Buildroot package (modern adb
