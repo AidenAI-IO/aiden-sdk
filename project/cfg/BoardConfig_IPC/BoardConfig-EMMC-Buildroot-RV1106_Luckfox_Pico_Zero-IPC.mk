@@ -35,7 +35,7 @@ export RK_UBOOT_DEFCONFIG_FRAGMENT="rk-emmc.config rv1106-ab.config"
 #       <partdef> := <size>[@<offset>](part-name)
 # Note:
 #   If the first partition offset is not 0x0, it must be added. Otherwise, it needn't adding.
-export RK_PARTITION_CMD_IN_ENV="32K(env),512K@32K(idblock),256K(uboot),4M(misc),32M(boot_a),32M(boot_b),256M(oem_a),256M(oem_b),1536M(rootfs_a),1536M(rootfs_b),3G(userdata),256M(ota)"
+export RK_PARTITION_CMD_IN_ENV="32K(env),512K@32K(idblock),256K(uboot),4M(misc),32M(boot_a),32M(boot_b),256M(oem_a),256M(oem_b),1536M(rootfs_a),1536M(rootfs_b),3G(userdata),300M(ota)"
 
 # config partition's filesystem type (squashfs is readonly)
 # emmc:    squashfs/ext4
