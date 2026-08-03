@@ -330,6 +330,55 @@ define sync_buildroot_board_config
 	$(call inject_android_tools_aiden_pkg)
 	$(call inject_opkg_aiden_pkg)
 	$(call pin_libarchive_optouts)
+	$(call pin_libsolv_semantics)
+endef
+
+# Buildroot's libsolv.mk sets only the static/shared flags, so libsolv is built
+# with MULTI_SEMANTICS and ENABLE_DEBIAN both defaulting to OFF. That produces a
+# library hardwired to rpm version semantics, and opkg then dies at runtime on
+# its very first install:
+#
+#     libsolv not built with Debian or Multi semantics
+#     Could not initialize libsolv solver
+#
+# opkg_solver_libsolv.c calls pool_setdisttype(pool, DISTTYPE_DEB), and libsolv's
+# pool_setdisttype is compiled to `return pool->disttype == disttype ? disttype :
+# -1` unless MULTI_SEMANTICS is on. Every mutating opkg operation -- install,
+# upgrade, remove -- fails closed with exit 255; read-only ones (list, info,
+# download) still work, which is why a smoke test that stops at `opkg --version`
+# looks perfectly healthy. Observed on the board, not theorised.
+#
+# MULTI_SEMANTICS=ON is exactly what Yocto (which maintains opkg) builds libsolv
+# with, and it is the only flag opkg needs: opkg never uses ENABLE_COMPLEX_DEPS,
+# and libsolv's zstd support is irrelevant to Entware's gzip feeds -- enabling it
+# would add an undeclared zstd dependency to libsolv.mk for nothing.
+#
+# Not switched off again for other packages, unlike the libarchive pins above:
+# libsolv exists in this config only because opkg wants it, and MULTI_SEMANTICS
+# only adds runtime-selectable distribution types.
+#
+# The flag is inserted *before* $(eval $(cmake-package)), where every other
+# LIBSOLV_CONF_OPTS assignment already lives. Appending to the end of the file
+# instead would mean setting a package variable after the infrastructure that
+# consumes it has been expanded -- whether that still works depends on when make
+# expands the generated recipe, which is not a subtlety worth betting a 1.5 h
+# build on. The guard below therefore checks placement, not just presence.
+#
+# Idempotent: the insert is skipped once the flag is present, so re-running on an
+# already-patched tree is a no-op.
+define pin_libsolv_semantics
+	@set -e; \
+		libsolv_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/libsolv/libsolv.mk"; \
+		if ! grep -q -- '-DMULTI_SEMANTICS=ON' "$$libsolv_mk"; then \
+			sed -i '/^\$$(eval \$$(cmake-package))$$/i LIBSOLV_CONF_OPTS += -DMULTI_SEMANTICS=ON' \
+				"$$libsolv_mk"; \
+		fi; \
+		flag_line=$$(grep -n -- '-DMULTI_SEMANTICS=ON' "$$libsolv_mk" | head -1 | cut -d: -f1); \
+		eval_line=$$(grep -n -- 'cmake-package' "$$libsolv_mk" | head -1 | cut -d: -f1); \
+		if [ -z "$$flag_line" ] || [ -z "$$eval_line" ] || [ "$$flag_line" -ge "$$eval_line" ]; then \
+			echo "failed to enable MULTI_SEMANTICS in libsolv.mk (flag=$$flag_line eval=$$eval_line)" >&2; \
+			exit 1; \
+		fi
 endef
 
 # opkg drags in libarchive: its Config.in selects BR2_PACKAGE_LIBARCHIVE and its
