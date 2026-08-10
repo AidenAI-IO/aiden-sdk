@@ -193,10 +193,10 @@
 				data-lanes = <1 2 3 4>;
 			};
 
-			//tc358743
+			// RK628D HDMI-to-CSI bridge
 			csi_dphy_input2: endpoint@2 {
 				reg = <2>;
-				remote-endpoint = <&tc358743_out>;
+				remote-endpoint = <&rk628_out>;
 				data-lanes = <1 2>;
 			};
 		};
@@ -219,22 +219,27 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c4m2_xfer>;
 
-	tc358743: tc358743@0f {
-		compatible = "toshiba,tc358743";
-		reg = <0x0f>;
-		clocks = <&out_osc_hdmi>;
-		clock-names = "refclk";
-		reset-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
-		interrupt-parent = <&gpio3>;
-		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_HIGH>;
+	rk628_csi: rk628-csi@50 {
+		compatible = "rockchip,rk628-csi-v4l2";
+		reg = <0x50>;
+		clocks = <&cru MCLK_REF_MIPI0>;
+		clock-names = "soc_24M";
+		assigned-clocks = <&cru CLK_REF_MIPI0>;
+		assigned-clock-rates = <24000000>;
+		reset-gpios = <&gpio3 RK_PB1 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipi_refclk_out0>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "RK628D-CSI";
+		rockchip,camera-module-lens-name = "NC";
 
 		port {
-			tc358743_out: endpoint {
+			rk628_out: endpoint {
 				remote-endpoint = <&csi_dphy_input2>;
 				data-lanes = <1 2>;
 				clock-lanes = <0>;
 				clock-noncontinuous;
-				link-frequencies = /bits/ 64 <297000000>;
 			};
 		};
 	};

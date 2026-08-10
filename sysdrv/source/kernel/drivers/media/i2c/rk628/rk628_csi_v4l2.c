@@ -53,8 +53,8 @@ MODULE_PARM_DESC(debug, "debug level (0-3)");
 #define EDID_NUM_BLOCKS_MAX		2
 #define EDID_BLOCK_SIZE			128
 
-#define RK628_CSI_LINK_FREQ_LOW		350000000
-#define RK628_CSI_LINK_FREQ_HIGH	400000000
+#define RK628_CSI_LINK_FREQ_LOW		375000000
+#define RK628_CSI_LINK_FREQ_HIGH	625000000
 #define RK628_CSI_PIXEL_RATE_LOW	400000000
 #define RK628_CSI_PIXEL_RATE_HIGH	600000000
 #define MIPI_DATARATE_MBPS_LOW		750
@@ -287,6 +287,29 @@ static void rk628_dsi_enable(struct v4l2_subdev *sd);
 static inline struct rk628_csi *to_csi(struct v4l2_subdev *sd)
 {
 	return container_of(sd, struct rk628_csi, sd);
+}
+
+static void rk628_csi_update_link_freq(struct rk628_csi *csi)
+{
+	unsigned int index;
+	u32 pixel_rate;
+
+	if ((csi->timings.bt.width == 3840 &&
+	     csi->timings.bt.height == 2160) ||
+	    csi->csi_lanes_in_use <= 2) {
+		index = 1;
+		csi->lane_mbps = MIPI_DATARATE_MBPS_HIGH;
+		pixel_rate = RK628_CSI_PIXEL_RATE_HIGH;
+	} else {
+		index = 0;
+		csi->lane_mbps = MIPI_DATARATE_MBPS_LOW;
+		pixel_rate = RK628_CSI_PIXEL_RATE_LOW;
+	}
+
+	if (csi->link_freq)
+		v4l2_ctrl_s_ctrl(csi->link_freq, index);
+	if (csi->pixel_rate)
+		v4l2_ctrl_s_ctrl_int64(csi->pixel_rate, pixel_rate);
 }
 
 static bool tx_5v_power_present(struct v4l2_subdev *sd)
@@ -1357,6 +1380,7 @@ static int rk628_csi_s_dv_timings(struct v4l2_subdev *sd,
 	}
 
 	csi->timings = *timings;
+	rk628_csi_update_link_freq(csi);
 	enable_stream(sd, false);
 
 	return 0;
@@ -1424,7 +1448,7 @@ static int rk628_csi_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 	struct rk628_csi *csi = to_csi(sd);
 
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	cfg->flags = V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK;
 
 	switch (csi->csi_lanes_in_use) {
 	case 1:
@@ -1614,24 +1638,14 @@ static int rk628_csi_set_fmt(struct v4l2_subdev *sd,
 	csi->mbus_fmt_code = format->format.code;
 	mode = rk628_csi_find_best_fit(format);
 	csi->cur_mode = mode;
-
-	if ((mode->width == 3840) && (mode->height == 2160)) {
-		v4l2_dbg(1, debug, sd,
-			"%s res wxh:%dx%d, link freq:%llu, pixrate:%u\n",
-			__func__, mode->width, mode->height,
-			link_freq_menu_items[1], RK628_CSI_PIXEL_RATE_HIGH);
-		__v4l2_ctrl_s_ctrl(csi->link_freq, 1);
-		__v4l2_ctrl_s_ctrl_int64(csi->pixel_rate,
-			RK628_CSI_PIXEL_RATE_HIGH);
-	} else {
-		v4l2_dbg(1, debug, sd,
-			"%s res wxh:%dx%d, link freq:%llu, pixrate:%u\n",
-			__func__, mode->width, mode->height,
-			link_freq_menu_items[0], RK628_CSI_PIXEL_RATE_LOW);
-		__v4l2_ctrl_s_ctrl(csi->link_freq, 0);
-		__v4l2_ctrl_s_ctrl_int64(csi->pixel_rate,
-			RK628_CSI_PIXEL_RATE_LOW);
-	}
+	rk628_csi_update_link_freq(csi);
+	v4l2_dbg(1, debug, sd,
+		"%s res wxh:%dx%d, lanes:%u, link freq:%llu, pixrate:%u\n",
+		__func__, mode->width, mode->height, csi->csi_lanes_in_use,
+		csi->lane_mbps == MIPI_DATARATE_MBPS_HIGH ?
+		link_freq_menu_items[1] : link_freq_menu_items[0],
+		csi->lane_mbps == MIPI_DATARATE_MBPS_HIGH ?
+		RK628_CSI_PIXEL_RATE_HIGH : RK628_CSI_PIXEL_RATE_LOW);
 
 	enable_stream(sd, false);
 
@@ -1783,6 +1797,9 @@ static long rk628_csi_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	case RKMODULE_GET_MODULE_INFO:
 		rk628_csi_get_module_inf(csi, (struct rkmodule_inf *)arg);
 		break;
+	case RKMODULE_GET_HDMI_MODE:
+		*(int *)arg = RKMODULE_HDMIIN_MODE;
+		break;
 	default:
 		ret = -ENOIOCTLCMD;
 		break;
@@ -1797,12 +1814,7 @@ static int mipi_dphy_power_on(struct rk628_csi *csi)
 	u32 bus_width, mask;
 	struct v4l2_subdev *sd = &csi->sd;
 
-	if ((csi->timings.bt.width == 3840 && csi->timings.bt.height == 2160) ||
-	    csi->csi_lanes_in_use <= 2) {
-		csi->lane_mbps = MIPI_DATARATE_MBPS_HIGH;
-	} else {
-		csi->lane_mbps = MIPI_DATARATE_MBPS_LOW;
-	}
+	rk628_csi_update_link_freq(csi);
 
 	bus_width =  csi->lane_mbps << 8;
 	bus_width |= COMBTXPHY_MODULEA_EN;
@@ -1839,6 +1851,7 @@ static long rk628_csi_compat_ioctl32(struct v4l2_subdev *sd,
 {
 	void __user *up = compat_ptr(arg);
 	struct rkmodule_inf *inf;
+	int *mode;
 	long ret;
 
 	switch (cmd) {
@@ -1856,6 +1869,16 @@ static long rk628_csi_compat_ioctl32(struct v4l2_subdev *sd,
 				ret = -EFAULT;
 		}
 		kfree(inf);
+		break;
+	case RKMODULE_GET_HDMI_MODE:
+		mode = kzalloc(sizeof(*mode), GFP_KERNEL);
+		if (!mode)
+			return -ENOMEM;
+
+		ret = rk628_csi_ioctl(sd, cmd, mode);
+		if (!ret && copy_to_user(up, mode, sizeof(*mode)))
+			ret = -EFAULT;
+		kfree(mode);
 		break;
 
 	default:
@@ -2199,6 +2222,8 @@ static int rk628_csi_probe(struct i2c_client *client,
 			V4L2_CID_LINK_FREQ,
 			ARRAY_SIZE(link_freq_menu_items) - 1,
 			0, link_freq_menu_items);
+	if (csi->link_freq)
+		csi->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 	csi->pixel_rate = v4l2_ctrl_new_std(&csi->hdl, NULL,
 			V4L2_CID_PIXEL_RATE, 0, RK628_CSI_PIXEL_RATE_HIGH, 1,
 			RK628_CSI_PIXEL_RATE_HIGH);
@@ -2220,6 +2245,7 @@ static int rk628_csi_probe(struct i2c_client *client,
 		v4l2_err(sd, "cfg v4l2 ctrls failed! err:%d\n", err);
 		goto err_hdl;
 	}
+	rk628_csi_update_link_freq(csi);
 
 	if (rk628_csi_update_controls(sd)) {
 		err = -ENODEV;
