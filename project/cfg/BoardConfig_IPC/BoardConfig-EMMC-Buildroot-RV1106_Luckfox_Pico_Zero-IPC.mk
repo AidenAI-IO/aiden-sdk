@@ -86,15 +86,14 @@ export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 # Kernel defconfig fragment
 # Keep Bluetooth disabled for boot-item slimming while enabling compressed
 # in-memory swap to reduce OOM risk under transient agent/frame workloads.
-export RK_KERNEL_DEFCONFIG_FRAGMENT=aiden-zram.config
+export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config aiden-rk628.config"
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
 #     "iqfile1 iqfile2 iqfile3 ..."
 # ./build.sh media and copy <SDK root dir>/output/out/media_out/isp_iqfiles/$RK_CAMERA_SENSOR_IQFILES
-#export RK_CAMERA_SENSOR_IQFILES="sc4336_OT01_40IRC_F16.json sc3336_CMK-OT2119-PC1_30IRC-F16.json mis5001_CMK-OT2115-PC1_30IRC-F16.json"
-#export RK_CAMERA_SENSOR_IQFILES="sc4336_OT01_40IRC_F16.json sc3336_CMK-OT2119-PC1_30IRC-F16.json sc530ai_CMK-OT2115-PC1_30IRC-F16.json"
-export RK_CAMERA_SENSOR_IQFILES="mia1321_MIA1321_30IRC-F16.json imx415_CMK-OT2022-PX1_IR0147-36IRC-8M-F20.json"
+# RK628D outputs YUV and does not use a sensor IQ file.
+export RK_CAMERA_SENSOR_IQFILES=
 
 # Config sensor lens CAC calibrattion bin files
 #export RK_CAMERA_SENSOR_CAC_BIN="CAC_sc4336_OT01_40IRC_F16"
