@@ -209,7 +209,7 @@
 	rk628_csi: rk628-csi@50 {
 		compatible = "rockchip,rk628-csi-v4l2";
 		reg = <0x50>;
-		reset-gpios = <&gpio3 RK_PC5 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
+		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&rk628_reset_pin>;
 		rockchip,camera-module-index = <0>;
