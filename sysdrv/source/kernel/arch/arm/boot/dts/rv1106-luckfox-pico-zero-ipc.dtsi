@@ -197,7 +197,7 @@
 			csi_dphy_input2: endpoint@2 {
 				reg = <2>;
 				remote-endpoint = <&rk628_out>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
 			};
 		};
 
@@ -223,7 +223,7 @@
 	rk628_csi: rk628-csi@50 {
 		compatible = "rockchip,rk628-csi-v4l2";
 		reg = <0x50>;
-		reset-gpios = <&gpio3 RK_PB1 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio1 RK_PC2 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&rk628_reset_pin>;
 		rockchip,camera-module-index = <0>;
@@ -234,7 +234,7 @@
 		port {
 			rk628_out: endpoint {
 				remote-endpoint = <&csi_dphy_input2>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
 				clock-lanes = <0>;
 				clock-noncontinuous;
 			};
@@ -323,7 +323,7 @@
 	status = "okay";
 
 	pinctrl-names = "default";
-	pinctrl-0 = <&rk628_mipi_pins>;
+	pinctrl-0 = <&mipi_pins>;
 	port {
 		/* MIPI CSI-2 endpoint */
 		cif_mipi_in: endpoint {
@@ -455,20 +455,7 @@
 &pinctrl {
 	rk628 {
 		rk628_reset_pin: rk628-reset-pin {
-			rockchip,pins = <3 RK_PB1 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-
-		rk628_mipi_pins: rk628-mipi-pins {
-			rockchip,pins =
-				/* MIPI clock lane */
-				<3 RK_PC0 2 &pcfg_pull_none>,
-				<3 RK_PC1 2 &pcfg_pull_none>,
-				/* MIPI data lane 0 */
-				<3 RK_PC2 2 &pcfg_pull_none>,
-				<3 RK_PC3 2 &pcfg_pull_none>,
-				/* MIPI data lane 1 */
-				<3 RK_PB6 2 &pcfg_pull_none>,
-				<3 RK_PB7 2 &pcfg_pull_none>;
+			rockchip,pins = <1 RK_PC2 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
