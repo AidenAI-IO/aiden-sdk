@@ -1351,8 +1351,10 @@ static void rk628_csi_work_i2c_poll(struct work_struct *work)
 	struct rk628_csi *csi = container_of(work, struct rk628_csi,
 			work_i2c_poll);
 	struct v4l2_subdev *sd = &csi->sd;
+	bool handled = false;
 	int ret;
 
+	rk628_csi_isr(sd, 0, &handled);
 	mutex_lock(&csi->confctl_mutex);
 	ret = rk628_csi_format_change(sd);
 	mutex_unlock(&csi->confctl_mutex);
