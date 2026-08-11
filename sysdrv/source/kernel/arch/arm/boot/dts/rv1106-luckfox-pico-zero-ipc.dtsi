@@ -179,20 +179,6 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			//mia1321
-			csi_dphy_input0: endpoint@0 {
-				reg = <0>;
-				remote-endpoint = <&mia1321_out>;
-				data-lanes = <1 2>;
-			};
-
-			//imx415
-			csi_dphy_input1: endpoint@1 {
-				reg = <1>;
-				remote-endpoint = <&imx415_out>;
-				data-lanes = <1 2 3 4>;
-			};
-
 			// RK628D HDMI-to-CSI bridge
 			csi_dphy_input2: endpoint@2 {
 				reg = <2>;
@@ -223,7 +209,7 @@
 	rk628_csi: rk628-csi@50 {
 		compatible = "rockchip,rk628-csi-v4l2";
 		reg = <0x50>;
-		reset-gpios = <&gpio1 RK_PC2 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
+		reset-gpios = <&gpio3 RK_PC5 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&rk628_reset_pin>;
 		rockchip,camera-module-index = <0>;
@@ -244,43 +230,13 @@
 	mia1321: mia1321@60 {
 		compatible = "imagedesign,mia1321";
 		reg = <0x60>;
-		clocks = <&out_osc_mia1321>;
-		clock-names = "xvclk";
-		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_io_1>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "MIA1321";
-		rockchip,camera-module-lens-name = "30IRC-F16";
-		port {
-				mia1321_out: endpoint {
-					remote-endpoint = <&csi_dphy_input0>;
-					data-lanes = <1 2 3 4>;
-				};
-		};
+		status = "disabled";
 	};
 
 	imx415: imx415@37 {
 		compatible = "sony,imx415";
-		status = "okay";
 		reg = <0x37>;
-		clocks = <&out_osc_imx415>;
-		clock-names = "xvclk";
-		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_io_1>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "CMK-OT2022-PX1";
-		rockchip,camera-module-lens-name = "IR0147-36IRC-8M-F20";
-		lens-focus = <&cam_ircut0>;
-		port {
-			imx415_out: endpoint {
-				remote-endpoint = <&csi_dphy_input1>;
-				data-lanes = <1 2 3 4>;
-			};
-		};
+		status = "disabled";
 	};
 };
 
@@ -455,7 +411,7 @@
 &pinctrl {
 	rk628 {
 		rk628_reset_pin: rk628-reset-pin {
-			rockchip,pins = <1 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
