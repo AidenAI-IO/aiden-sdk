@@ -609,7 +609,7 @@ void rk628_csi_isr_fifoints(HAUDINFO info, u32 fifo_ints)
 }
 EXPORT_SYMBOL(rk628_csi_isr_fifoints);
 
-int rk628_is_avi_ready(struct rk628 *rk628, bool avi_rcv_rdy)
+int rk628_is_avi_ready(struct rk628 *rk628, const bool *avi_rcv_rdy)
 {
 	u8 i;
 	u32 val, avi_pb = 0;
@@ -623,7 +623,7 @@ int rk628_is_avi_ready(struct rk628 *rk628, bool avi_rcv_rdy)
 	for (i = 0; i < 100; i++) {
 		rk628_i2c_read(rk628, HDMI_RX_PDEC_AVI_PB, &val);
 		dev_info(rk628->dev, "%s PDEC_AVI_PB:%#x, avi_rcv_rdy:%d\n",
-			 __func__, val, avi_rcv_rdy);
+			 __func__, val, READ_ONCE(*avi_rcv_rdy));
 		if (i > 30 && !(hdcp_ctrl_val & 0x400)) {
 			rk628_i2c_read(rk628, HDMI_RX_HDCP_CTRL, &hdcp_ctrl_val);
 			/* force hdcp avmute */
@@ -631,7 +631,7 @@ int rk628_is_avi_ready(struct rk628 *rk628, bool avi_rcv_rdy)
 			rk628_i2c_write(rk628, HDMI_RX_HDCP_CTRL, hdcp_ctrl_val);
 		}
 
-		if (val && val == avi_pb && avi_rcv_rdy) {
+		if (val && val == avi_pb && READ_ONCE(*avi_rcv_rdy)) {
 			if (++cnt >= max_cnt)
 				break;
 		} else {

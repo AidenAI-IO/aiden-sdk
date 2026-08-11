@@ -708,7 +708,7 @@ static void rk628_dsi_set_scs(struct rk628_csi *csi)
 	int avi_rdy;
 
 	mutex_lock(&csi->confctl_mutex);
-	avi_rdy = rk628_is_avi_ready(csi->rk628, csi->avi_rcv_rdy);
+	avi_rdy = rk628_is_avi_ready(csi->rk628, &csi->avi_rcv_rdy);
 	mutex_unlock(&csi->confctl_mutex);
 
 	rk628_i2c_read(csi->rk628, HDMI_RX_PDEC_AVI_PB, &val);
@@ -926,7 +926,7 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 	v4l2_dbg(1, debug, sd, "%s csi cofig done\n", __func__);
 
 	mutex_lock(&csi->confctl_mutex);
-	avi_rdy = rk628_is_avi_ready(csi->rk628, csi->avi_rcv_rdy);
+	avi_rdy = rk628_is_avi_ready(csi->rk628, &csi->avi_rcv_rdy);
 	mutex_unlock(&csi->confctl_mutex);
 
 	rk628_i2c_read(csi->rk628, HDMI_RX_PDEC_AVI_PB, &val);
