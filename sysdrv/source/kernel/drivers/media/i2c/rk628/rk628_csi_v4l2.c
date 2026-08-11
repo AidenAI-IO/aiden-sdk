@@ -505,6 +505,12 @@ static void rk628_hdmirx_config_all(struct v4l2_subdev *sd)
 	}
 }
 
+static void rk628_csi_arm_recovery_cooldown(struct rk628_csi *csi)
+{
+	csi->next_recovery = csi->nosignal ?
+		jiffies + msecs_to_jiffies(SIGNAL_RECOVERY_INTERVAL_MS) : 0;
+}
+
 static void rk628_csi_delayed_work_enable_hotplug(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -536,6 +542,7 @@ static void rk628_csi_delayed_work_enable_hotplug(struct work_struct *work)
 		rk628_hdmirx_controller_reset(sd);
 		csi->nosignal = true;
 	}
+	rk628_csi_arm_recovery_cooldown(csi);
 	mutex_unlock(&csi->confctl_mutex);
 	if (csi->plat_data->tx_mode == DSI_MODE && plugin)
 		enable_stream(sd, true);
