@@ -80,6 +80,13 @@
 		regulator-boot-on;
 	};
 
+	out_osc_tc358743: out-osc-tc358743 {
+		compatible = "fixed-clock";
+		clock-output-names = "out-osc-tc358743";
+		clock-frequency = <27000000>;
+		#clock-cells = <0>;
+	};
+
 	leds: leds {
 		compatible = "gpio-leds";
 		work_led: work{
@@ -152,11 +159,18 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			// Firefly RK628D HDMI-to-CSI bridge
+			// Firefly RK628D HDMI-to-CSI bridge (four lanes)
 			rk628_csi_in: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&rk628_csi_out>;
 				data-lanes = <1 2 3 4>;
+			};
+
+			// Toshiba TC358743 HDMI-to-CSI bridge (legacy two-lane board)
+			tc358743_csi_in: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&tc358743_csi_out>;
+				data-lanes = <1 2>;
 			};
 		};
 
@@ -206,6 +220,28 @@
 				remote-endpoint = <&rk628_csi_in>;
 				data-lanes = <1 2 3 4>;
 				clock-lanes = <0>;
+			};
+		};
+	};
+
+	tc358743_csi: tc358743@f {
+		compatible = "toshiba,tc358743";
+		reg = <0x0f>;
+		status = "okay";
+
+		clocks = <&out_osc_tc358743>;
+		clock-names = "refclk";
+		reset-gpios = <&gpio3 RK_PB1 GPIO_ACTIVE_LOW>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_HIGH>;
+
+		port {
+			tc358743_csi_out: endpoint {
+				remote-endpoint = <&tc358743_csi_in>;
+				data-lanes = <1 2>;
+				clock-lanes = <0>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <297000000>;
 			};
 		};
 	};
