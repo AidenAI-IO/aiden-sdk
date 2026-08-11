@@ -329,6 +329,7 @@ define sync_buildroot_board_config
 	cp ${NODEJS_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/nodejs/
 	$(call inject_android_tools_aiden_pkg)
 	$(call inject_opkg_aiden_pkg)
+	$(call inject_python_charset_normalizer_aiden_pkg)
 	$(call pin_libarchive_optouts)
 	$(call pin_libsolv_semantics)
 endef
@@ -473,6 +474,27 @@ define inject_opkg_aiden_pkg
 			{ echo "failed to inject opkg-aiden into package/opkg" >&2; exit 1; }
 endef
 
+# Buildroot 2023.02.6 combines aiohttp 3.8.3, whose package metadata requires
+# charset-normalizer >=2.0,<3.0, with charset-normalizer 3.0.1. Buildroot does
+# not validate Python package metadata after assembling the target rootfs, so
+# the image builds successfully but `python3 -m pip check` fails on the board.
+#
+# Keep the upstream package registration and overwrite only its recipe and hash
+# with the last compatible 2.x release. Like the opkg backport above, this must
+# run for every build because an already-extracted Buildroot tree can otherwise
+# retain files from a previous branch. The project-owned directory is also part
+# of buildroot_config_state_value below so changing the pin invalidates cached
+# package output.
+PYTHON_CHARSET_NORMALIZER_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/python-charset-normalizer-aiden
+define inject_python_charset_normalizer_aiden_pkg
+	cp $(PYTHON_CHARSET_NORMALIZER_AIDEN_SRC)/python-charset-normalizer.mk \
+		$(PYTHON_CHARSET_NORMALIZER_AIDEN_SRC)/python-charset-normalizer.hash \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/python-charset-normalizer/
+	grep -q '^PYTHON_CHARSET_NORMALIZER_VERSION = 2.1.1$$' \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/python-charset-normalizer/python-charset-normalizer.mk || \
+		{ echo "failed to inject compatible python-charset-normalizer recipe" >&2; exit 1; }
+endef
+
 define buildroot_config_state_value
 $$( \
 	{ \
@@ -484,7 +506,7 @@ $$( \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
 		find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" "$(NODEJS_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
-		find "$(ANDROID_TOOLS_AIDEN_SRC)" "$(OPKG_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
+		find "$(ANDROID_TOOLS_AIDEN_SRC)" "$(OPKG_AIDEN_SRC)" "$(PYTHON_CHARSET_NORMALIZER_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
 	} | sha256sum | awk '{print $$1}' \
 )
 endef
