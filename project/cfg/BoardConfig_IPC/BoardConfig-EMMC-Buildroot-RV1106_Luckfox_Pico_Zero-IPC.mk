@@ -84,9 +84,9 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-# Keep Bluetooth disabled for boot-item slimming while enabling compressed
-# in-memory swap to reduce OOM risk under transient agent/frame workloads.
-export RK_KERNEL_DEFCONFIG_FRAGMENT=aiden-zram.config
+# Keep compressed in-memory swap and enable the UART Bluetooth controller used
+# by the onboard AIC8800 combo module.
+export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config"
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
