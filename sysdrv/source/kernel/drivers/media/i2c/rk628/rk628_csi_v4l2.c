@@ -62,6 +62,7 @@ MODULE_PARM_DESC(debug, "debug level (0-3)");
 
 #define POLL_INTERVAL_MS		1000
 #define SIGNAL_RECOVERY_INTERVAL_MS	10000
+#define HDMI_RX_SCDC_LOCK_MASK		GENMASK(11, 8)
 #define MODETCLK_CNT_NUM		1000
 #define MODETCLK_HZ			49500000
 #define RXPHY_CFG_MAX_TIMES		15
@@ -1100,10 +1101,12 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 
 			if (cnt >= 15)
 				break;
-		} while (((status & 0xfff) != 0xf00) ||
+		} while (((status & HDMI_RX_SCDC_LOCK_MASK) !=
+			HDMI_RX_SCDC_LOCK_MASK) ||
 				(!rk628_rcv_supported_res(sd, width, height)));
 
-		if (((status & 0xfff) != 0xf00) ||
+		if (((status & HDMI_RX_SCDC_LOCK_MASK) !=
+			HDMI_RX_SCDC_LOCK_MASK) ||
 				(!rk628_rcv_supported_res(sd, width, height))) {
 			v4l2_err(sd, "%s hdmi rxphy lock failed, retry:%d\n",
 					__func__, i);
