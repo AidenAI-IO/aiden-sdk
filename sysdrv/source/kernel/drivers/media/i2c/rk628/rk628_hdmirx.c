@@ -625,10 +625,13 @@ int rk628_is_avi_ready(struct rk628 *rk628, const bool *avi_rcv_rdy)
 		dev_info(rk628->dev, "%s PDEC_AVI_PB:%#x, avi_rcv_rdy:%d\n",
 			 __func__, val, READ_ONCE(*avi_rcv_rdy));
 		if (i > 30 && !(hdcp_ctrl_val & 0x400)) {
-			rk628_i2c_read(rk628, HDMI_RX_HDCP_CTRL, &hdcp_ctrl_val);
-			/* force hdcp avmute */
-			hdcp_ctrl_val |= 0x400;
-			rk628_i2c_write(rk628, HDMI_RX_HDCP_CTRL, hdcp_ctrl_val);
+			if (!rk628_i2c_read(rk628, HDMI_RX_HDCP_CTRL,
+					      &hdcp_ctrl_val)) {
+				/* force hdcp avmute */
+				hdcp_ctrl_val |= 0x400;
+				rk628_i2c_write(rk628, HDMI_RX_HDCP_CTRL,
+						  hdcp_ctrl_val);
+			}
 		}
 
 		if (val && val == avi_pb && READ_ONCE(*avi_rcv_rdy)) {

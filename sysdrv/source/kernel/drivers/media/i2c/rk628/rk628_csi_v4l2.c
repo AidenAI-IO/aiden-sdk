@@ -1233,7 +1233,10 @@ static int rk628_csi_format_change(struct v4l2_subdev *sd)
 
 	if (!v4l2_match_dv_timings(&csi->timings, &timings, 0, false)) {
 		/* automatically set timing rather than set by userspace */
-		rk628_csi_s_dv_timings(sd, &timings);
+		ret = rk628_csi_s_dv_timings(sd, &timings);
+		if (ret)
+			return ret;
+
 		v4l2_print_dv_timings(sd->name,
 				"rk628_csi_format_change: New format: ",
 				&timings, false);
