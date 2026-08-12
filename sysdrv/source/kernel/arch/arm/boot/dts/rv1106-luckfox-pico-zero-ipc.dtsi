@@ -189,7 +189,7 @@
 
 &i2c4 {
 	status = "okay";
-	clock-frequency = <400000>;
+	clock-frequency = <100000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c4m2_xfer>;
 
@@ -205,9 +205,9 @@
 		 * 22-pin cable. IRQ, plugin detect and enable are optional in the
 		 * driver, so signal changes are detected by its I2C polling path.
 		 */
-		/* Luckfox 22-pin CSI connector pin 17 (CSI_IO1). */
+		/* Luckfox 22-pin CSI connector pin 17 (CSI_IO1), push-pull/no-pull. */
 		pinctrl-names = "default";
-		pinctrl-0 = <&cam_io_1>;
+		pinctrl-0 = <&rk628_reset_pin>;
 		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
 
 		rockchip,camera-module-index = <0>;
@@ -416,6 +416,12 @@
 };
 
 &pinctrl {
+	rk628 {
+		rk628_reset_pin: rk628-reset-pin {
+			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	cam {
 		cam_io_0: cam-io-0 {
 			rockchip,pins = <3 RK_PC4 RK_FUNC_GPIO &pcfg_pull_up>;

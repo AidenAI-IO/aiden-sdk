@@ -391,6 +391,6 @@ bool rk628_audio_fifoints_enabled(HAUDINFO info);
 bool rk628_audio_ctsnints_enabled(HAUDINFO info);
 void rk628_csi_isr_ctsn(HAUDINFO info, u32 pdec_ints);
 void rk628_csi_isr_fifoints(HAUDINFO info, u32 fifo_ints);
-int rk628_is_avi_ready(struct rk628 *rk628, bool avi_rcv_rdy);
+int rk628_is_avi_ready(struct rk628 *rk628, const bool *avi_rcv_rdy);
 
 #endif

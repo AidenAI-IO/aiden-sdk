@@ -645,7 +645,7 @@ static void enable_bt1120tx(struct v4l2_subdev *sd)
 	rk628_i2c_write(bt1120->rk628, GRF_RGB_ENC_CON, val);
 	v4l2_dbg(1, debug, sd, "%s bt1120 cofig done\n", __func__);
 
-	avi_rdy = rk628_is_avi_ready(bt1120->rk628, bt1120->avi_rcv_rdy);
+	avi_rdy = rk628_is_avi_ready(bt1120->rk628, &bt1120->avi_rcv_rdy);
 
 	rk628_i2c_read(bt1120->rk628, HDMI_RX_PDEC_AVI_PB, &val);
 	video_fmt = (val & VIDEO_FORMAT_MASK) >> 5;
