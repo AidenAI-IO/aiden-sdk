@@ -35,7 +35,7 @@ export RK_UBOOT_DEFCONFIG_FRAGMENT="rk-emmc.config rv1106-ab.config"
 #       <partdef> := <size>[@<offset>](part-name)
 # Note:
 #   If the first partition offset is not 0x0, it must be added. Otherwise, it needn't adding.
-export RK_PARTITION_CMD_IN_ENV="32K(env),512K@32K(idblock),256K(uboot),4M(misc),32M(boot_a),32M(boot_b),256M(oem_a),256M(oem_b),1536M(rootfs_a),1536M(rootfs_b),3G(userdata)"
+export RK_PARTITION_CMD_IN_ENV="32K(env),512K@32K(idblock),256K(uboot),4M(misc),32M(boot_a),32M(boot_b),256M(oem_a),256M(oem_b),1536M(rootfs_a),1536M(rootfs_b),3G(userdata),300M(ota)"
 
 # config partition's filesystem type (squashfs is readonly)
 # emmc:    squashfs/ext4
@@ -46,7 +46,7 @@ export RK_PARTITION_CMD_IN_ENV="32K(env),512K@32K(idblock),256K(uboot),4M(misc),
 #         AAAA ----------> partition name
 #         /BBBB/CCCC ----> partition mount point
 #         ext4 ----------> partition filesystem type
-export RK_PARTITION_FS_TYPE_CFG=rootfs_a@IGNORE@ext4,rootfs_b@IGNORE@ext4,userdata@/userdata@ext4,oem_a@IGNORE@ext4,oem_b@IGNORE@ext4
+export RK_PARTITION_FS_TYPE_CFG=rootfs_a@IGNORE@ext4,rootfs_b@IGNORE@ext4,userdata@/userdata@ext4,oem_a@IGNORE@ext4,oem_b@IGNORE@ext4,ota@/userdata/ota@ext4
 
 # config filesystem compress (Just for squashfs or ubifs)
 # squashfs: lz4/lzo/lzma/xz/gzip, default xz
@@ -84,9 +84,9 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-# Keep Bluetooth disabled for boot-item slimming while enabling compressed
-# in-memory swap to reduce OOM risk under transient agent/frame workloads.
-export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config aiden-rk628.config"
+# Keep compressed in-memory swap, enable the UART Bluetooth controller used by
+# the onboard AIC8800 combo module, and build both supported HDMI bridges.
+export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config aiden-rk628.config"
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:

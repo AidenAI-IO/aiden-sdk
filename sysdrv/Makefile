@@ -328,6 +328,88 @@ define sync_buildroot_board_config
 	cp ${BUSYBOX_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/busybox/
 	cp ${NODEJS_PATCH_PATH}/*.patch $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/nodejs/
 	$(call inject_android_tools_aiden_pkg)
+	$(call inject_opkg_aiden_pkg)
+	$(call pin_libarchive_optouts)
+	$(call pin_libsolv_semantics)
+endef
+
+# Buildroot's libsolv.mk sets only the static/shared flags, so libsolv is built
+# with MULTI_SEMANTICS and ENABLE_DEBIAN both defaulting to OFF. That produces a
+# library hardwired to rpm version semantics, and opkg then dies at runtime on
+# its very first install:
+#
+#     libsolv not built with Debian or Multi semantics
+#     Could not initialize libsolv solver
+#
+# opkg_solver_libsolv.c calls pool_setdisttype(pool, DISTTYPE_DEB), and libsolv's
+# pool_setdisttype is compiled to `return pool->disttype == disttype ? disttype :
+# -1` unless MULTI_SEMANTICS is on. Every mutating opkg operation -- install,
+# upgrade, remove -- fails closed with exit 255; read-only ones (list, info,
+# download) still work, which is why a smoke test that stops at `opkg --version`
+# looks perfectly healthy. Observed on the board, not theorised.
+#
+# MULTI_SEMANTICS=ON is exactly what Yocto (which maintains opkg) builds libsolv
+# with, and it is the only flag opkg needs: opkg never uses ENABLE_COMPLEX_DEPS,
+# and libsolv's zstd support is irrelevant to Entware's gzip feeds -- enabling it
+# would add an undeclared zstd dependency to libsolv.mk for nothing.
+#
+# Not switched off again for other packages, unlike the libarchive pins above:
+# libsolv exists in this config only because opkg wants it, and MULTI_SEMANTICS
+# only adds runtime-selectable distribution types.
+#
+# The flag is inserted *before* $(eval $(cmake-package)), where every other
+# LIBSOLV_CONF_OPTS assignment already lives. Appending to the end of the file
+# instead would mean setting a package variable after the infrastructure that
+# consumes it has been expanded -- whether that still works depends on when make
+# expands the generated recipe, which is not a subtlety worth betting a 1.5 h
+# build on. The guard below therefore checks placement, not just presence.
+#
+# Idempotent: the insert is skipped once the flag is present, so re-running on an
+# already-patched tree is a no-op.
+define pin_libsolv_semantics
+	@set -e; \
+		libsolv_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/libsolv/libsolv.mk"; \
+		if ! grep -q -- '-DMULTI_SEMANTICS=ON' "$$libsolv_mk"; then \
+			sed -i '/^\$$(eval \$$(cmake-package))$$/i LIBSOLV_CONF_OPTS += -DMULTI_SEMANTICS=ON' \
+				"$$libsolv_mk"; \
+		fi; \
+		flag_line=$$(grep -n -- '-DMULTI_SEMANTICS=ON' "$$libsolv_mk" | head -1 | cut -d: -f1); \
+		eval_line=$$(grep -n -- 'cmake-package' "$$libsolv_mk" | head -1 | cut -d: -f1); \
+		if [ -z "$$flag_line" ] || [ -z "$$eval_line" ] || [ "$$flag_line" -ge "$$eval_line" ]; then \
+			echo "failed to enable MULTI_SEMANTICS in libsolv.mk (flag=$$flag_line eval=$$eval_line)" >&2; \
+			exit 1; \
+		fi
+endef
+
+# opkg drags in libarchive: its Config.in selects BR2_PACKAGE_LIBARCHIVE and its
+# recipe hard-depends on it. Buildroot packages that key off that symbol then
+# silently gain a feature they never had here before -- and mpv 0.33.1 does not
+# survive it. mpv's stream/stream_libarchive.h declares a POSIX-2008 `locale_t`,
+# which this uClibc-ng toolchain never typedefs (bits/uClibc_locale.h only
+# provides `__locale_t`, and there is no xlocale.h), so enabling the feature
+# fails the build outright with "unknown type name 'locale_t'".
+#
+# Adding a package manager must not change what unrelated packages do, so every
+# consumer is pinned back to the state it had before opkg existed. samba4 is
+# pinned for the same reason even though it has not been observed to fail: its
+# libarchive feature (smbclient tar support) is unused here, and it builds late
+# and slowly, so discovering a problem there costs a full CI cycle for nothing.
+# Drop a line below if that package's libarchive feature is ever actually wanted.
+#
+# Both substitutions are idempotent: after the rewrite the matched pattern is
+# gone, so re-running on an already-patched tree is a no-op.
+define pin_libarchive_optouts
+	@set -e; \
+		mpv_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/mpv/mpv.mk"; \
+		samba4_mk="$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/samba4/samba4.mk"; \
+		sed -i 's|^MPV_CONF_OPTS += --enable-libarchive$$|MPV_CONF_OPTS += --disable-libarchive|' "$$mpv_mk"; \
+		sed -i 's|^SAMBA4_CONF_OPTS += --with-libarchive$$|SAMBA4_CONF_OPTS += --without-libarchive|' "$$samba4_mk"; \
+		if grep -q -- '--enable-libarchive' "$$mpv_mk"; then \
+			echo "failed to pin mpv off libarchive" >&2; exit 1; \
+		fi; \
+		if grep -q -- '+= --with-libarchive' "$$samba4_mk"; then \
+			echo "failed to pin samba4 off libarchive" >&2; exit 1; \
+		fi
 endef
 
 # android-tools-aiden is an out-of-tree Buildroot package (modern adb
@@ -358,6 +440,39 @@ define inject_android_tools_aiden_pkg
 		}
 endef
 
+# opkg is an in-tree Buildroot package, but 2023.02.6 carries an older release
+# (0.4.5). opkg-aiden holds a verbatim backport of Buildroot master's recipe
+# for 0.7.0, which is still autotools, so the integration is an in-place
+# overwrite of package/opkg rather than an out-of-tree package: both
+# BR2_PACKAGE_OPKG and its package/Config.in registration already exist, so no
+# sed injection is needed here.
+#
+# The overwrite is re-applied on every build because the buildroot tree is not
+# always re-extracted: buildroot_create does start from a fresh tarball, but the
+# plain buildroot target only extracts when the tree is absent, and the
+# `make clean` triggered by a config-state change clears output/ and leaves
+# package/ alone. So the patch set has to be *synced*, not merely topped up --
+# removing or renaming a patch under opkg-aiden must remove it from the tree
+# too, or a stale patch keeps being applied and V10 reproducibility breaks.
+# Upstream 2023.02.6 ships no patches for this package, so clearing them all is
+# what restores the baseline.
+OPKG_AIDEN_SRC := $(SYSDRV_DIR)/tools/board/buildroot/opkg-aiden
+define inject_opkg_aiden_pkg
+	cp $(OPKG_AIDEN_SRC)/opkg.mk \
+		$(OPKG_AIDEN_SRC)/opkg.hash \
+		$(OPKG_AIDEN_SRC)/Config.in \
+		$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/
+	@set -e; \
+		rm -f $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/*.patch; \
+		if ls $(OPKG_AIDEN_SRC)/*.patch >/dev/null 2>&1; then \
+			cp $(OPKG_AIDEN_SRC)/*.patch \
+				$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/; \
+		fi; \
+		grep -q '^OPKG_VERSION = 0.7.0$$' \
+			$(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/opkg/opkg.mk || \
+			{ echo "failed to inject opkg-aiden into package/opkg" >&2; exit 1; }
+endef
+
 define buildroot_config_state_value
 $$( \
 	{ \
@@ -369,7 +484,7 @@ $$( \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_w_defconfig"; \
 		sha256sum "$(SYSDRV_DIR)/tools/board/buildroot/busybox.config"; \
 		find "$(HCITOOL_TOOL_PATH)" "$(MPV_PATCH_PATH)" "$(BUSYBOX_PATCH_PATH)" "$(NODEJS_PATCH_PATH)" -type f -name '*.patch' -print | sort | xargs -r sha256sum; \
-		find "$(ANDROID_TOOLS_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
+		find "$(ANDROID_TOOLS_AIDEN_SRC)" "$(OPKG_AIDEN_SRC)" -type f -print | sort | xargs -r sha256sum; \
 	} | sha256sum | awk '{print $$1}' \
 )
 endef
