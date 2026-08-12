@@ -84,17 +84,16 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-# Keep compressed in-memory swap and enable the UART Bluetooth controller used
-# by the onboard AIC8800 combo module.
-export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config"
+# Keep compressed in-memory swap, enable the UART Bluetooth controller used by
+# the onboard AIC8800 combo module, and build both supported HDMI bridges.
+export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config aiden-rk628.config"
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
 #     "iqfile1 iqfile2 iqfile3 ..."
 # ./build.sh media and copy <SDK root dir>/output/out/media_out/isp_iqfiles/$RK_CAMERA_SENSOR_IQFILES
-#export RK_CAMERA_SENSOR_IQFILES="sc4336_OT01_40IRC_F16.json sc3336_CMK-OT2119-PC1_30IRC-F16.json mis5001_CMK-OT2115-PC1_30IRC-F16.json"
-#export RK_CAMERA_SENSOR_IQFILES="sc4336_OT01_40IRC_F16.json sc3336_CMK-OT2119-PC1_30IRC-F16.json sc530ai_CMK-OT2115-PC1_30IRC-F16.json"
-export RK_CAMERA_SENSOR_IQFILES="mia1321_MIA1321_30IRC-F16.json imx415_CMK-OT2022-PX1_IR0147-36IRC-8M-F20.json"
+# RK628D outputs YUV and does not use a sensor IQ file.
+export RK_CAMERA_SENSOR_IQFILES=
 
 # Config sensor lens CAC calibrattion bin files
 #export RK_CAMERA_SENSOR_CAC_BIN="CAC_sc4336_OT01_40IRC_F16"

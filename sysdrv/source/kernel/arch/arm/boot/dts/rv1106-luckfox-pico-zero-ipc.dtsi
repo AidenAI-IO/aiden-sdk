@@ -80,6 +80,13 @@
 		regulator-boot-on;
 	};
 
+	out_osc_tc358743: out-osc-tc358743 {
+		compatible = "fixed-clock";
+		clock-output-names = "out-osc-tc358743";
+		clock-frequency = <27000000>;
+		#clock-cells = <0>;
+	};
+
 	leds: leds {
 		compatible = "gpio-leds";
 		work_led: work{
@@ -89,33 +96,6 @@
 		};
 	};
 
-	out_osc_mia1321: out-osc-mia1321 {
-		compatible = "fixed-clock";
-		clock-output-names = "out-osc-mia1321";
-		clock-frequency = <26000000>;
-		#clock-cells = <0>;
-	};
-
-	out_osc_imx415: out-osc-imx415 {
-		compatible = "fixed-clock";
-		clock-output-names = "out-osc-imx415";
-		clock-frequency = <37125000>;
-		#clock-cells = <0>;
-	};
-
-	out_osc_hdmi: out-osc-hdmi {
-		compatible = "fixed-clock";
-		clock-output-names = "out-osc-hdmi";
-		clock-frequency = <27000000>;
-		#clock-cells = <0>;
-	};
-
-	cam_ircut0: cam_ircut {
-		status = "okay";
-		compatible = "rockchip,ircut";
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-	};
 };
 
 /***************************** audio ********************************/
@@ -179,24 +159,17 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			//mia1321
-			csi_dphy_input0: endpoint@0 {
+			// Firefly RK628D HDMI-to-CSI bridge (four lanes)
+			rk628_csi_in: endpoint@0 {
 				reg = <0>;
-				remote-endpoint = <&mia1321_out>;
-				data-lanes = <1 2>;
-			};
-
-			//imx415
-			csi_dphy_input1: endpoint@1 {
-				reg = <1>;
-				remote-endpoint = <&imx415_out>;
+				remote-endpoint = <&rk628_csi_out>;
 				data-lanes = <1 2 3 4>;
 			};
 
-			//tc358743
-			csi_dphy_input2: endpoint@2 {
-				reg = <2>;
-				remote-endpoint = <&tc358743_out>;
+			// Toshiba TC358743 HDMI-to-CSI bridge (legacy two-lane board)
+			tc358743_csi_in: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&tc358743_csi_out>;
 				data-lanes = <1 2>;
 			};
 		};
@@ -216,67 +189,59 @@
 
 &i2c4 {
 	status = "okay";
+	clock-frequency = <100000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c4m2_xfer>;
 
-	tc358743: tc358743@0f {
-		compatible = "toshiba,tc358743";
-		reg = <0x0f>;
-		clocks = <&out_osc_hdmi>;
-		clock-names = "refclk";
-		reset-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
-		interrupt-parent = <&gpio3>;
-		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_HIGH>;
+	rk628_csi: rk628-csi@50 {
+		compatible = "rockchip,rk628-csi-v4l2";
+		reg = <0x50>;
+		status = "okay";
+		continues-clk;
+		/* Preserve the HDMI timing on CSI; userspace advertises 1080p60-only EDID. */
+
+		/*
+		 * The Firefly adapter exposes only RESET on the current 30-pin to
+		 * 22-pin cable. IRQ, plugin detect and enable are optional in the
+		 * driver, so signal changes are detected by its I2C polling path.
+		 */
+		/* Luckfox 22-pin CSI connector pin 17 (CSI_IO1), push-pull/no-pull. */
+		pinctrl-names = "default";
+		pinctrl-0 = <&rk628_reset_pin>;
+		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
+
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "RK628-CSI";
+		rockchip,camera-module-lens-name = "NC";
 
 		port {
-			tc358743_out: endpoint {
-				remote-endpoint = <&csi_dphy_input2>;
-				data-lanes = <1 2>;
+			rk628_csi_out: endpoint {
+				remote-endpoint = <&rk628_csi_in>;
+				data-lanes = <1 2 3 4>;
 				clock-lanes = <0>;
-				clock-noncontinuous;
-				link-frequencies = /bits/ 64 <297000000>;
 			};
 		};
 	};
 
-	mia1321: mia1321@60 {
-		compatible = "imagedesign,mia1321";
-		reg = <0x60>;
-		clocks = <&out_osc_mia1321>;
-		clock-names = "xvclk";
-		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_io_1>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "MIA1321";
-		rockchip,camera-module-lens-name = "30IRC-F16";
-		port {
-				mia1321_out: endpoint {
-					remote-endpoint = <&csi_dphy_input0>;
-					data-lanes = <1 2 3 4>;
-				};
-		};
-	};
-
-	imx415: imx415@37 {
-		compatible = "sony,imx415";
+	tc358743_csi: tc358743@f {
+		compatible = "toshiba,tc358743";
+		reg = <0x0f>;
 		status = "okay";
-		reg = <0x37>;
-		clocks = <&out_osc_imx415>;
-		clock-names = "xvclk";
-		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_io_1>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "CMK-OT2022-PX1";
-		rockchip,camera-module-lens-name = "IR0147-36IRC-8M-F20";
-		lens-focus = <&cam_ircut0>;
+
+		clocks = <&out_osc_tc358743>;
+		clock-names = "refclk";
+		reset-gpios = <&gpio3 RK_PB1 GPIO_ACTIVE_LOW>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_HIGH>;
+
 		port {
-			imx415_out: endpoint {
-				remote-endpoint = <&csi_dphy_input1>;
-				data-lanes = <1 2 3 4>;
+			tc358743_csi_out: endpoint {
+				remote-endpoint = <&tc358743_csi_in>;
+				data-lanes = <1 2>;
+				clock-lanes = <0>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <297000000>;
 			};
 		};
 	};
@@ -451,6 +416,12 @@
 };
 
 &pinctrl {
+	rk628 {
+		rk628_reset_pin: rk628-reset-pin {
+			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	cam {
 		cam_io_0: cam-io-0 {
 			rockchip,pins = <3 RK_PC4 RK_FUNC_GPIO &pcfg_pull_up>;
