@@ -45,7 +45,7 @@ UBOOT_PATH=${SDK_SYSDRV_DIR}/source/uboot/u-boot
 #for custom rootfs
 CUSTOM_ROOT=${SDK_ROOT_DIR}/custom_root
 
-export RK_JOBS=$(($(getconf _NPROCESSORS_ONLN) / 2 + 1))
+export RK_JOBS="${RK_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 export RK_BUILD_VERSION_TYPE=RELEASE
 
 export SDK_ROOT_DIR=$SDK_ROOT_DIR
@@ -2524,6 +2524,7 @@ function build_slot_boot_img() {
 	mkdir -p $kernel_obj_dir/arch/$RK_ARCH/boot/dts
 	slot_dtb=$kernel_obj_dir/arch/$RK_ARCH/boot/dts/${dtb_name%.dtb}${slot_suffix}.dtb
 	slot_cmdline="$RK_PARTITION_ARGS root=PARTLABEL=$root_label rootfstype=$RK_PROJECT_ROOTFS_TYPE aiden.slot_suffix=$slot_suffix"
+	[ -n "$RK_KERNEL_CMDLINE_EXTRA" ] && slot_cmdline="$slot_cmdline $RK_KERNEL_CMDLINE_EXTRA"
 	[ -n "$RK_BOOTARGS_CMA_SIZE" ] && slot_cmdline="$slot_cmdline rk_dma_heap_cma=$RK_BOOTARGS_CMA_SIZE"
 	$RK_PROJECT_PATH_PC_TOOLS/update_dtb_bootargs.sh --dtb "$base_dtb" --cmdline "$slot_cmdline" --output "$slot_dtb"
 
@@ -2550,6 +2551,20 @@ function build_ab_boot_imgs() {
 	build_slot_boot_img _a ${root_label_base}_a $RK_PROJECT_OUTPUT_IMAGE/boot_a.img
 	build_slot_boot_img _b ${root_label_base}_b $RK_PROJECT_OUTPUT_IMAGE/boot_b.img
 	rm -f $RK_PROJECT_OUTPUT_IMAGE/boot.img
+}
+
+function build_ab_images() {
+	check_config RK_PARTITION_CMD_IN_ENV || return 1
+	if ! is_ab_layout; then
+		msg_error "A/B boot image generation requires an A/B partition layout"
+		return 1
+	fi
+
+	# Build only the slot-specific FITs and factory A/B metadata. Debian
+	# rootfs, OEM, userdata and OTA filesystems are assembled separately.
+	build_ab_misc_img
+	build_ab_boot_imgs
+	finish_build
 }
 
 function __RUN_POST_CLEAN_FILES() {
@@ -3011,6 +3026,7 @@ while [ $# -ne 0 ]; do
 	sysdrv) option=build_sysdrv ;;
 	uboot) option=build_uboot ;;
 	kernel) option=build_kernel ;;
+	abimages) option=build_ab_images ;;
 	rootfs) option=build_rootfs ;;
 	media) option=build_media ;;
 	app) option=build_app ;;
