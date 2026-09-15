@@ -336,7 +336,13 @@ void setup_download_mode(void)
 		printf("download %skey pressed... ",
 		       is_hotkey(HK_ROCKUSB_DNL) ? "hot" : "");
 #ifdef CONFIG_CMD_ROCKUSB
-		vbus = rockchip_u2phy_vbus_detect();
+		/*
+		 * This is the USB device port. VBUS detection is absent or races
+		 * cable insertion on RV1106, so a pressed download key is the
+		 * authoritative indication that RockUSB should be started.
+		 */
+		printf("USB device port, assuming attached... ");
+		vbus = 1;
 #endif
 		if (vbus > 0) {
 			printf("%sentering download mode...\n",
