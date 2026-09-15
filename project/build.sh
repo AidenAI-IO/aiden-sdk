@@ -45,7 +45,7 @@ UBOOT_PATH=${SDK_SYSDRV_DIR}/source/uboot/u-boot
 #for custom rootfs
 CUSTOM_ROOT=${SDK_ROOT_DIR}/custom_root
 
-export RK_JOBS=$(($(getconf _NPROCESSORS_ONLN) / 2 + 1))
+export RK_JOBS="${RK_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 export RK_BUILD_VERSION_TYPE=RELEASE
 
 export SDK_ROOT_DIR=$SDK_ROOT_DIR
