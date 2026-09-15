@@ -6,8 +6,10 @@
 
 #include <common.h>
 #include <asm/io.h>
+#include <dm.h>
 #include <dwc3-uboot.h>
 #include <g_dnl.h>
+#include <misc.h>
 #include <rockusb.h>
 #include <usb.h>
 
@@ -25,6 +27,9 @@ DECLARE_GLOBAL_DATA_PTR;
 #define USB2PHY_TX_EYE_HEIGHT	0x0124
 #define USB2PHY_SQUELCH_CALIB0	0x01a4
 #define USB2PHY_SQUELCH_CALIB1	0x01b4
+
+/* cpu-version@8 efuse cell: bits[5:3] encode the RV1106 CPU revision. */
+#define RV1106_OTP_CPU_VERSION_OFFSET	0x08
 
 #ifdef CONFIG_USB_DWC3
 static struct dwc3_device dwc3_device_data = {
@@ -60,12 +65,44 @@ static void usb2phy_update_bits(u32 offset, u32 mask, u32 value)
 	writel(reg, USB2PHY_APB_BASE + offset);
 }
 
+#if defined(CONFIG_ROCKCHIP_OTP) && !defined(CONFIG_SPL_BUILD) && \
+	!defined(CONFIG_TPL_BUILD)
+static u32 rv1106_get_cpu_version(void)
+{
+	struct udevice *dev;
+	u8 val = 0;
+
+	if (uclass_get_device_by_driver(UCLASS_MISC,
+					DM_GET_DRIVER(rockchip_otp), &dev))
+		return 0;
+
+	if (misc_read(dev, RV1106_OTP_CPU_VERSION_OFFSET, &val, sizeof(val)))
+		return 0;
+
+	return (val >> 3) & GENMASK(2, 0);
+}
+#else
+static u32 rv1106_get_cpu_version(void)
+{
+	return 0;
+}
+#endif
+
 static void rv1106_usb2phy_tuning(void)
 {
 	/* Keep the U-Boot RockUSB electrical setup aligned with Linux. */
 	usb2phy_update_bits(USB2PHY_PRE_EMPHASIS, GENMASK(2, 0), 0x07);
-	usb2phy_update_bits(USB2PHY_PRE_EMPHASIS_STRENGTH,
-			    GENMASK(5, 3), 0x03 << 3);
+
+	/*
+	 * Linux lowers the Tx HS pre-emphasis strength when the CPU version
+	 * is non-zero; keep the same choice so link training matches.
+	 */
+	if (rv1106_get_cpu_version())
+		usb2phy_update_bits(USB2PHY_PRE_EMPHASIS_STRENGTH,
+				    GENMASK(5, 3), 0x01 << 3);
+	else
+		usb2phy_update_bits(USB2PHY_PRE_EMPHASIS_STRENGTH,
+				    GENMASK(5, 3), 0x03 << 3);
 	usb2phy_update_bits(USB2PHY_RX_SQUELCH, GENMASK(6, 3), 0x00 << 3);
 	usb2phy_update_bits(USB2PHY_FSLS_RECEIVER, BIT(6), 0);
 	usb2phy_update_bits(USB2PHY_HS_ODT, GENMASK(4, 0), 0x1f);
