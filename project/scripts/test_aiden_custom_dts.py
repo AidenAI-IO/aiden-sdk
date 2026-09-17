@@ -76,6 +76,27 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("pinctrl-0 = <&uart3m1_xfer>;", self.dts)
         self.assertIn("&uart3 {", self.dts)
 
+    def test_gd32_mcu_interface_nodes(self):
+        # RV_HOLD lets the SoC take over VCC5V0_SYS from the companion MCU.
+        self.assertIn("mcu_control {", self.dts)
+        self.assertIn('label = "rv-hold";', self.dts)
+        self.assertIn("gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;", self.dts)
+        # RECOVERY is surfaced as a KEY_VENDOR gpio-key.
+        self.assertIn("gpio-keys {", self.dts)
+        self.assertIn('label = "recovery";', self.dts)
+        self.assertIn("linux,code = <KEY_VENDOR>;", self.dts)
+        self.assertIn("gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;", self.dts)
+        self.assertIn("debounce-interval = <100>;", self.dts)
+        # GPIO4_C0 is taken over from the EVB SARADC volume keys.
+        self.assertIn('adc-keys {\n\t\tstatus = "disabled";', self.dts)
+
+    def test_uart3_m1_uses_soc_function_index(self):
+        # RV1106 selects UART3_M1 on GPIO1_D0/D1 with function index 5.
+        self.assertIn(
+            "<1 RK_PD0 5 &pcfg_pull_none>,\n\t\t\t\t/* gpio1_d1 -> UART3_RX_M1 */\n\t\t\t\t<1 RK_PD1 5 &pcfg_pull_none>;",
+            self.dts,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

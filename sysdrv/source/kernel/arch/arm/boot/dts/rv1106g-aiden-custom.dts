@@ -134,6 +134,49 @@
 		BT,wake_host_irq = <&gpio1 RK_PA2 GPIO_ACTIVE_HIGH>; /* BT_WAKE_MCU */
 		status = "okay";
 	};
+
+	/*
+	 * GD32L235 companion MCU interface.
+	 *
+	 * RV_HOLD keeps VCC5V0_SYS enabled: the MCU forces the rail up at
+	 * power-on and cuts it again unless the SoC takes over the signal
+	 * within its supervision window.  The kernel drives GPIO0_A3 high
+	 * through the gpio-leds default state.
+	 */
+	mcu_control {
+		compatible = "gpio-leds";
+
+		rv_hold {
+			label = "rv-hold";
+			gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+	};
+
+	/*
+	 * RECOVERY shares the GPIO4_C0 / SARADC_IN0 ball.  Pulling it low
+	 * while the BootROM samples the pin enters Loader/download mode; at
+	 * runtime it is reported as a KEY_VENDOR key event.
+	 */
+	gpio-keys {
+		compatible = "gpio-keys";
+		autorepeat;
+
+		recovery {
+			label = "recovery";
+			linux,code = <KEY_VENDOR>;
+			gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <100>;
+		};
+	};
+
+	/*
+	 * The EVB ADC volume keys are not populated; GPIO4_C0 is used as
+	 * RECOVERY instead of as SARADC_IN0.
+	 */
+	adc-keys {
+		status = "disabled";
+	};
 };
 
 /**********CRU**********/
@@ -483,6 +526,22 @@
 
 		rk628_int_pin: rk628-int-pin {
 			rockchip,pins = <1 RK_PB1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	/*
+	 * UART3 is the GD32L235 LPUART1 link and uses the M1 pin group on
+	 * GPIO1_D0/D1.  RV1106 muxes UART3_M1 with function index 5 on these
+	 * balls; function 2 selects vicap_clkin_m1/vicap_hsync_m1 (index 2 is
+	 * the RV1126 value and does not apply here).
+	 */
+	uart3 {
+		uart3m1_xfer: uart3m1-xfer {
+			rockchip,pins =
+				/* gpio1_d0 -> UART3_TX_M1 */
+				<1 RK_PD0 5 &pcfg_pull_none>,
+				/* gpio1_d1 -> UART3_RX_M1 */
+				<1 RK_PD1 5 &pcfg_pull_none>;
 		};
 	};
 };
