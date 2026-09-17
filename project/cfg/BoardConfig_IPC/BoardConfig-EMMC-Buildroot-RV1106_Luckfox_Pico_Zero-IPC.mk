@@ -14,7 +14,9 @@ export RK_APP_TYPE=AGENT
 export RK_BOOTARGS_CMA_SIZE="100M"
 
 # Kernel dts
-export RK_KERNEL_DTS=rv1106g-luckfox-pico-zero.dts
+# Aiden SCH v1 custom hardware (RV1106G): MP2720/BQ27220 PMIC on I2C1,
+# RK628F/H bridge on I2C3, SDMMC0 TF card, UART0 Bluetooth, UART2 ASRPro.
+export RK_KERNEL_DTS=rv1106g-aiden-custom.dts
 
 #################################################
 #	BOOT_MEDIUM
