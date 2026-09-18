@@ -309,18 +309,14 @@
 };
 
 /**********Power management / I2C**********/
+/*
+ * The MP2720 charger is not wired to the RV1106, so it has no DT node.
+ * Only the BQ27220 fuel gauge is populated on I2C1.
+ */
 &i2c1 {
 	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c1m1_xfer>;
-
-	mp2720: charger@4b {
-		compatible = "mps,mp2720";
-		reg = <0x4b>;
-		interrupt-parent = <&gpio0>;
-		interrupts = <RK_PA3 IRQ_TYPE_LEVEL_LOW>;
-		status = "okay";
-	};
 
 	bq27220: fuel-gauge@55 {
 		compatible = "ti,bq27220";

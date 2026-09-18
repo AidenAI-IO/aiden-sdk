@@ -27,8 +27,10 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("export RK_KERNEL_DTS=rv1106g-aiden-custom.dts", text)
 
     def test_power_management_i2c_nodes(self):
-        self.assertIn("mp2720: charger@4b", self.dts)
-        self.assertIn('compatible = "mps,mp2720";', self.dts)
+        # The MP2720 charger is not wired to the RV1106 and must not be
+        # described in the board device tree.
+        self.assertNotIn("charger@4b", self.dts)
+        self.assertNotIn('compatible = "mps,mp2720";', self.dts)
         self.assertIn("bq27220: fuel-gauge@55", self.dts)
         self.assertIn('compatible = "ti,bq27220";', self.dts)
         self.assertIn("vcc3v3_sd: vcc3v3-sd-regulator", self.dts)
