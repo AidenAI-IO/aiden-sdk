@@ -88,7 +88,7 @@ export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 # Kernel defconfig fragment
 # Keep compressed in-memory swap, enable the UART Bluetooth controller and
 # SDIO/WLAN dependencies used by the onboard AIC8800D80 combo module, and
-# build both supported HDMI bridges.
+# enable the RK628F HDMI-to-CSI bridge.
 export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config rv1106-sdiowifi.config aiden-rk628.config"
 
 # Config sensor IQ files
