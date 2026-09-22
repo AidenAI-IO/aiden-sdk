@@ -80,7 +80,9 @@ ifneq ($(findstring $(RK_ENABLE_WIFI_CHIP),"ATBM6441"),)
 	@make -C atbm6441/
 endif
 
-ifneq ($(findstring $(RK_ENABLE_WIFI_CHIP),"AIC8800DC"),)
+# The SDIO driver directory is shared by the AIC8800DC and AIC8800D80
+# variants.  The module ID is resolved by the driver at runtime.
+ifneq ($(filter AIC8800DC AIC8800D80,$(RK_ENABLE_WIFI_CHIP)),)
 	@make -C aic8800dc/
 endif
 

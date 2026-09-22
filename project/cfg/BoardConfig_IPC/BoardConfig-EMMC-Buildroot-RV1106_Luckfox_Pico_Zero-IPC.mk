@@ -86,9 +86,10 @@ export RK_UBOOT_DEFCONFIG=luckfox_rv1106_uboot_defconfig
 export RK_KERNEL_DEFCONFIG=luckfox_rv1106_linux_defconfig
 
 # Kernel defconfig fragment
-# Keep compressed in-memory swap, enable the UART Bluetooth controller used by
-# the onboard AIC8800 combo module, and build both supported HDMI bridges.
-export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config aiden-rk628.config"
+# Keep compressed in-memory swap, enable the UART Bluetooth controller and
+# SDIO/WLAN dependencies used by the onboard AIC8800D80 combo module, and
+# build both supported HDMI bridges.
+export RK_KERNEL_DEFCONFIG_FRAGMENT="aiden-zram.config rv1106-bt.config rv1106-sdiowifi.config aiden-rk628.config"
 
 # Config sensor IQ files
 # RK_CAMERA_SENSOR_IQFILES format:
@@ -121,7 +122,10 @@ export RK_ENABLE_EXFATPROGS=y
 
 # enable rockchip wifi
 export RK_ENABLE_WIFI=y
-export RK_ENABLE_WIFI_CHIP=AIC8800DC
+# SKI.WB800D80S.1 is the AIC8800D80 SDIO/BT module.  The aic8800dc
+# directory contains the shared AIC8800 SDIO driver and selects the chip at
+# runtime from its SDIO ID.
+export RK_ENABLE_WIFI_CHIP=AIC8800D80
 
 # config wifi ssid and passwd
 export LF_WIFI_SSID="Aiden"

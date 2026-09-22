@@ -5,8 +5,8 @@
  * Derived from rv1106g-luckfox-pico-zero.dts and
  * rv1106-luckfox-pico-zero-ipc.dtsi and adapted to the Aiden SCH v1
  * hardware (GD32L235 MCU + MP2720 charger + BQ27220 fuel gauge,
- * RK628F/H HDMI-to-CSI bridge on I2C3, SDMMC0 TF card, SKI.WB800
- * WiFi/BT, AW8010 amplifier and ASRPro voice module).
+ * RK628F/H HDMI-to-CSI bridge on I2C3, SDMMC0 TF card, SKI.WB800D80S.1
+ * (AIC8800D80) WiFi/BT, AW8010 amplifier and ASRPro voice module).
  */
 
 /dts-v1/;
@@ -107,7 +107,7 @@
 		enable-active-high;
 	};
 
-	/* WiFi (SKI.WB800) 3.3V rail. */
+	/* WiFi (SKI.WB800D80S.1 / AIC8800D80) 3.3V rail. */
 	v_wifi_vcc: v-wifi-vcc {
 		compatible = "regulator-fixed";
 		regulator-name = "v_wifi_vcc";
@@ -261,12 +261,15 @@
 	dr_mode = "peripheral";
 };
 
-/**********SDIO-WIFI (SKI.WB800)**********/
+/**********SDIO-WIFI (SKI.WB800D80S.1 / AIC8800D80)**********/
 &sdio {
 	max-frequency = <50000000>;
 	bus-width = <4>;
 	non-removable;
 	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	rockchip,default-sample-phase = <90>;
 	supports-sdio;
 	vmmc-supply = <&v_wifi_vcc>; /* WiFi supply */
 	pinctrl-names = "default";
@@ -487,7 +490,8 @@
 };
 
 /**************************** UART ********************************/
-/* Bluetooth (SKI.WB800) on UART0 with RTS/CTS hardware flow control. */
+/* Bluetooth (SKI.WB800D80S.1 / AIC8800D80) on UART0 with RTS/CTS
+ * hardware flow control. */
 &uart0 {
 	status = "okay";
 	pinctrl-names = "default";

@@ -2,8 +2,8 @@
 """Checks for the Aiden SCH v1 (RV1106) board adaptation.
 
 The custom board was migrated from the Luckfox Pico Zero reference design;
-this validates that the device tree selected by the board config carries the
-hardware changes described in the migration report.
+this validates the selected device tree and the AIC8800D80 SDIO/BT integration
+that boots alongside it.
 """
 import pathlib
 import unittest
@@ -16,6 +16,25 @@ BOARD_CONFIG = (
     / "project/cfg/BoardConfig_IPC"
     / "BoardConfig-EMMC-Buildroot-RV1106_Luckfox_Pico_Zero-IPC.mk"
 )
+WIFI_MAKEFILE = ROOT / "sysdrv/drv_ko/wifi/Makefile"
+WIFI_LOADER = ROOT / "sysdrv/drv_ko/wifi/insmod_wifi.sh"
+WIFI_START = ROOT / "project/app/wifi_app/bin/wifi_start.sh"
+BT_INIT = (
+    ROOT
+    / "project/cfg/BoardConfig_IPC/overlay/overlay-luckfox-buildroot-init"
+    / "etc/init.d/S99hciinit"
+)
+AIDEN_BT_CONFIG = (
+    ROOT
+    / "project/cfg/BoardConfig_IPC/overlay/overlay-luckfox-buildroot-aiden"
+    / "etc/default/aic8800-bt"
+)
+AIDEN_WIFI_INIT = (
+    ROOT
+    / "project/cfg/BoardConfig_IPC/overlay/overlay-luckfox-buildroot-aiden"
+    / "etc/init.d/S26wifi"
+)
+AIC_FW_DIR = ROOT / "sysdrv/drv_ko/wifi/aic8800dc/aic8800dc_fw"
 
 
 class AidenCustomBoardTest(unittest.TestCase):
@@ -25,6 +44,8 @@ class AidenCustomBoardTest(unittest.TestCase):
     def test_board_config_selects_the_aiden_dts(self):
         text = BOARD_CONFIG.read_text()
         self.assertIn("export RK_KERNEL_DTS=rv1106g-aiden-custom.dts", text)
+        self.assertIn("export RK_ENABLE_WIFI_CHIP=AIC8800D80", text)
+        self.assertIn("rv1106-sdiowifi.config", text)
 
     def test_power_management_i2c_nodes(self):
         # The MP2720 charger is not wired to the RV1106 and must not be
@@ -68,9 +89,46 @@ class AidenCustomBoardTest(unittest.TestCase):
     def test_wifi_on_sdio_controller(self):
         self.assertIn("supports-sdio;", self.dts)
         self.assertIn("non-removable;", self.dts)
+        self.assertIn("cap-sdio-irq;", self.dts)
+        self.assertIn("keep-power-in-suspend;", self.dts)
+        self.assertIn("rockchip,default-sample-phase = <90>;", self.dts)
         self.assertIn(
-            "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;", self.dts
+            "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;",
+            self.dts,
         )
+
+    def test_aic8800d80_sdio_driver_path(self):
+        makefile = WIFI_MAKEFILE.read_text()
+        loader = WIFI_LOADER.read_text()
+        wifi_start = WIFI_START.read_text()
+        self.assertIn("AIC8800DC AIC8800D80", makefile)
+        for sdio_id in ("C08D", "0082"):
+            self.assertIn(sdio_id, loader)
+            self.assertIn(sdio_id, wifi_start)
+        self.assertNotIn("C18D", loader)
+        self.assertNotIn("C18D", wifi_start)
+
+    def test_aic8800d80_firmware_is_packaged(self):
+        required = {
+            "aic_userconfig_8800d80.txt",
+            "fmacfw_8800d80_u02.bin",
+            "fmacfw_8800d80_h_u02.bin",
+            "fw_adid_8800d80_u02.bin",
+            "fw_patch_8800d80_u02.bin",
+            "fw_patch_8800d80_u02_ext0.bin",
+            "fw_patch_table_8800d80_u02.bin",
+            "lmacfw_rf_8800d80_u02.bin",
+        }
+        self.assertTrue(required.issubset({p.name for p in AIC_FW_DIR.iterdir()}))
+
+    def test_aiden_wifi_and_bt_init_order(self):
+        wifi_init = AIDEN_WIFI_INIT.read_text()
+        bt_init = BT_INIT.read_text()
+        bt_config = AIDEN_BT_CONFIG.read_text()
+        self.assertIn("/oem/usr/ko/insmod_wifi.sh", wifi_init)
+        self.assertIn("/etc/default/aic8800-bt", bt_init)
+        self.assertIn("AIC8800_BT_TTY", bt_init)
+        self.assertIn("AIC8800_BT_TTY=/dev/ttyS0", bt_config)
 
     def test_audio_and_voice_module(self):
         self.assertIn("spk-con-gpios = <&gpio3 RK_PC0 GPIO_ACTIVE_HIGH>;", self.dts)
