@@ -87,14 +87,18 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertNotIn("uart1_gpios", self.dts)
 
     def test_wifi_on_sdio_controller(self):
-        self.assertIn("supports-sdio;", self.dts)
-        self.assertIn("non-removable;", self.dts)
-        self.assertIn("cap-sdio-irq;", self.dts)
-        self.assertIn("keep-power-in-suspend;", self.dts)
-        self.assertIn("rockchip,default-sample-phase = <90>;", self.dts)
+        sdio_start = self.dts.index("&sdio {")
+        sdio_end = self.dts.index("\n};", sdio_start) + len("\n};")
+        sdio = self.dts[sdio_start:sdio_end]
+
+        self.assertIn("supports-sdio;", sdio)
+        self.assertIn("non-removable;", sdio)
+        self.assertIn("cap-sdio-irq;", sdio)
+        self.assertIn("keep-power-in-suspend;", sdio)
+        self.assertIn("rockchip,default-sample-phase = <90>;", sdio)
         self.assertIn(
             "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;",
-            self.dts,
+            sdio,
         )
 
     def test_aic8800d80_sdio_driver_path(self):

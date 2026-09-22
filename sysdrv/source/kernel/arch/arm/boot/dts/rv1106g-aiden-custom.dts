@@ -20,7 +20,7 @@
 	compatible = "rockchip,rv1103g-38x38-ipc-v10", "rockchip,rv1106g3";
 
 	chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xff4c0000 console=ttyFIQ0 root=/dev/mmcblk0p7 rootwait snd_soc_core.prealloc_buffer_size_kbytes=16 coherent_pool=0";
+		bootargs = "root=/dev/mmcblk0p7 rootwait snd_soc_core.prealloc_buffer_size_kbytes=16 coherent_pool=0";
 	};
 
 	restart-poweroff {
@@ -90,8 +90,8 @@
 	vdd_arm: vdd-arm {
 		compatible = "regulator-fixed";
 		regulator-name = "vdd_arm";
-		regulator-min-microvolt = <800000>;
-		regulator-max-microvolt = <1000000>;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
 		regulator-init-microvolt = <900000>;
 		regulator-always-on;
 		regulator-boot-on;

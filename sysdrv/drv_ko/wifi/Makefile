@@ -119,6 +119,7 @@ build-sdio-clean:
 	@make -C hichannel/ clean
 	@make -C atbm/ clean
 	@make -C atbm6441/ clean
+	@make -C aic8800dc/ clean
 	@make -C aic8800_netdrv/ clean
 
 build-usb-clean:
