@@ -41,6 +41,19 @@ class AidenCustomBoardTest(unittest.TestCase):
     def setUp(self):
         self.dts = DTS.read_text()
 
+    def node(self, name):
+        """Return a DTS node, including its children, for scoped assertions."""
+        start = self.dts.index(name + " {")
+        end = self.dts.index("{", start) + 1
+        depth = 1
+        while depth:
+            if self.dts[end] == "{":
+                depth += 1
+            elif self.dts[end] == "}":
+                depth -= 1
+            end += 1
+        return self.dts[start:end]
+
     def test_board_config_selects_the_aiden_dts(self):
         text = BOARD_CONFIG.read_text()
         self.assertIn("export RK_KERNEL_DTS=rv1106g-aiden-custom.dts", text)
@@ -48,58 +61,125 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("rv1106-sdiowifi.config", text)
 
     def test_power_management_i2c_nodes(self):
-        # The MP2720 charger is not wired to the RV1106 and must not be
-        # described in the board device tree.
-        self.assertNotIn("charger@4b", self.dts)
-        self.assertNotIn('compatible = "mps,mp2720";', self.dts)
-        self.assertIn("bq27220: fuel-gauge@55", self.dts)
-        self.assertIn('compatible = "ti,bq27220";', self.dts)
+        # Charger and fuel gauge are both on the MCU's bus. The old RV1106
+        # I2C1 M1 binding also steals Bluetooth UART0 RX/TX.
+        for absent in ("charger@4b", "mps,mp2720", "fuel-gauge@55", "ti,bq27220"):
+            self.assertNotIn(absent, self.dts)
+        self.assertIn('status = "disabled";', self.node("&i2c1"))
         self.assertIn("vcc3v3_sd: vcc3v3-sd-regulator", self.dts)
         self.assertIn("v_wifi_vcc: v-wifi-vcc", self.dts)
 
-    def test_rk628_moved_to_i2c3_and_tc358743_removed(self):
-        self.assertIn("rk628: rk628@50", self.dts)
-        self.assertIn('compatible = "rockchip,rk628-csi-v4l2";', self.dts)
-        self.assertIn("reset-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;", self.dts)
-        self.assertIn("interrupts = <RK_PB1 IRQ_TYPE_LEVEL_HIGH>;", self.dts)
-        self.assertIn("pinctrl-0 = <&i2c3m1_xfer>;", self.dts)
+    def test_cpu_voltage_uses_schematic_pwm_feedback(self):
+        # SY8892's inverting feedback maps inverted 200 kHz PWM duty to
+        # 0.804--1.150 V. Expanding fixed-regulator limits cannot drive AVS.
+        regulator = self.node("vdd_arm: vdd-arm")
+        for setting in (
+            'compatible = "pwm-regulator";',
+            "pwms = <&pwm0 0 5000 1>;",
+            "regulator-min-microvolt = <804000>;",
+            "regulator-max-microvolt = <1150000>;",
+            "regulator-init-microvolt = <950000>;",
+            "regulator-settling-time-up-us = <250>;",
+            "pwm-dutycycle-unit = <1000>;",
+            "pwm-dutycycle-range = <0 1000>;",
+            "regulator-always-on;",
+            "regulator-boot-on;",
+        ):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, regulator)
+        self.assertNotIn('compatible = "regulator-fixed";', regulator)
+        self.assertIn("cpu-supply = <&vdd_arm>;", self.node("&cpu0"))
+        pwm = self.node("&pwm0")
+        self.assertIn('status = "okay";', pwm)
+        self.assertIn("pinctrl-0 = <&pwm0m0_pins>;", pwm)
+
+    def test_rk628_on_i2c4_with_power_and_reset(self):
+        i2c4 = self.node("&i2c4")
+        self.assertIn('status = "okay";', i2c4)
+        self.assertIn("clock-frequency = <100000>;", i2c4)
+        self.assertIn("pinctrl-0 = <&i2c4m1_xfer>;", i2c4)
+        self.assertIn("rk628: rk628@50", i2c4)
+        bridge = self.node("rk628: rk628@50")
+        for setting in (
+            'compatible = "rockchip,rk628-csi-v4l2";',
+            "reg = <0x50>;",
+            "enable-gpios = <&gpio1 RK_PA0 GPIO_ACTIVE_HIGH>;",
+            "reset-gpios = <&gpio1 RK_PA1 GPIO_ACTIVE_LOW>;",
+            "interrupts = <RK_PB1 IRQ_TYPE_LEVEL_HIGH>;",
+            "pinctrl-0 = <&rk628_power_pin &rk628_reset_pin &rk628_int_pin>;",
+        ):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, bridge)
+        for label, pin, pull in (
+            ("power", "RK_PA0", "pcfg_pull_none"),
+            ("reset", "RK_PA1", "pcfg_pull_none"),
+            ("int", "RK_PB1", "pcfg_pull_up"),
+        ):
+            self.assertIn(
+                f"<1 {pin} RK_FUNC_GPIO &{pull}>",
+                self.node(f"rk628_{label}_pin: rk628-{label}-pin"),
+            )
+        self.assertIn('status = "disabled";', self.node("&i2c3"))
         self.assertNotIn("tc358743", self.dts)
         self.assertNotIn("out_osc_tc358743", self.dts)
-        # I2C3 owns the bridge, the legacy I2C4 bus is turned off.
-        i2c3 = self.dts.index("&i2c3")
-        self.assertIn("rk628@50", self.dts[i2c3 : self.dts.index("&i2c4")])
-        self.assertIn('&i2c4 {\n\tstatus = "disabled";', self.dts)
 
     def test_tf_card_on_sdmmc0(self):
-        self.assertIn("vmmc-supply = <&vcc3v3_sd>;", self.dts)
-        self.assertIn("cd-gpios = <&gpio3 RK_PA1 GPIO_ACTIVE_LOW>;", self.dts)
         self.assertIn(
-            "pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_bus4 &sdmmc0_det>;",
-            self.dts,
+            "gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;",
+            self.node("vcc3v3_sd: vcc3v3-sd-regulator"),
         )
+        sdmmc = self.node("&sdmmc")
+        self.assertIn("vmmc-supply = <&vcc3v3_sd>;", sdmmc)
+        self.assertIn("cd-gpios = <&gpio3 RK_PA1 GPIO_ACTIVE_LOW>;", sdmmc)
+        self.assertIn(
+            "pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_bus4>;", sdmmc
+        )
+        # Card detect stays in GPIO mode, not SDMMC hardware-detect mode.
+        self.assertNotIn("sdmmc0_det", self.dts)
 
     def test_bluetooth_on_uart0_with_hardware_flow_control(self):
+        uart = self.node("&uart0")
+        self.assertIn('status = "okay";', uart)
         self.assertIn(
-            "pinctrl-0 = <&uart0m1_xfer &uart0m1_ctsn &uart0m1_rtsn>;", self.dts
+            "pinctrl-0 = <&uart0m1_xfer &uart0m1_ctsn &uart0m1_rtsn>;", uart
         )
-        # The legacy UART1 Bluetooth binding must be gone.
+        bluetooth = self.node("wireless_bluetooth: wireless-bluetooth")
+        self.assertIn("BT,wake_gpio = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;", bluetooth)
+        # BT_WAKE_MCU ends at the MCU. GPIO1_A2 belongs to CPU PWM feedback.
+        self.assertNotIn("BT,wake_host_irq", bluetooth)
+        self.assertNotIn("uart_rts_gpios", bluetooth)
+        self.assertNotIn("work_led:", self.dts)
         self.assertNotIn("&uart1 {", self.dts)
         self.assertNotIn("uart1_gpios", self.dts)
 
-    def test_wifi_on_sdio_controller(self):
-        sdio_start = self.dts.index("&sdio {")
-        sdio_end = self.dts.index("\n};", sdio_start) + len("\n};")
-        sdio = self.dts[sdio_start:sdio_end]
-
-        self.assertIn("supports-sdio;", sdio)
-        self.assertIn("non-removable;", sdio)
-        self.assertIn("cap-sdio-irq;", sdio)
-        self.assertIn("keep-power-in-suspend;", sdio)
-        self.assertIn("rockchip,default-sample-phase = <90>;", sdio)
-        self.assertIn(
+    def test_wifi_on_sdio_controller_with_wl_en_power_sequence(self):
+        sdio = self.node("&sdio")
+        for setting in (
+            "supports-sdio;", "non-removable;", "cap-sdio-irq;",
+            "keep-power-in-suspend;", "rockchip,default-sample-phase = <90>;",
+            "vmmc-supply = <&v_wifi_vcc>;", "vqmmc-supply = <&vcc_1v8>;",
+            "mmc-pwrseq = <&sdio_pwrseq>;", "no-sd;", "no-mmc;",
             "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;",
-            sdio,
+        ):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, sdio)
+        pwrseq = self.node("sdio_pwrseq: sdio-pwrseq")
+        for setting in (
+            'compatible = "mmc-pwrseq-simple";',
+            "pinctrl-0 = <&wifi_enable>;",
+            "reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;",
+            "post-power-on-delay-ms = <200>;",
+        ):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, pwrseq)
+        self.assertIn(
+            "<3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>",
+            self.node("wifi_enable: wifi-enable"),
         )
+        # WIFI_VCC_PWREN is MCU controlled; Linux only switches WL_EN.
+        supply = self.node("v_wifi_vcc: v-wifi-vcc")
+        self.assertIn("regulator-always-on;", supply)
+        self.assertNotIn("gpio =", supply)
 
     def test_aic8800d80_sdio_driver_path(self):
         makefile = WIFI_MAKEFILE.read_text()
@@ -135,31 +215,37 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("AIC8800_BT_TTY=/dev/ttyS0", bt_config)
 
     def test_audio_and_voice_module(self):
-        self.assertIn("spk-con-gpios = <&gpio3 RK_PC0 GPIO_ACTIVE_HIGH>;", self.dts)
-        self.assertIn("pinctrl-0 = <&uart2m1_xfer>;", self.dts)
-        self.assertIn("pinctrl-0 = <&uart3m1_xfer>;", self.dts)
-        self.assertIn("&uart3 {", self.dts)
+        self.assertIn(
+            "pa-ctl-gpios = <&gpio4 RK_PC1 GPIO_ACTIVE_HIGH>;",
+            self.node("&acodec"),
+        )
+        self.assertNotIn("spk-con-gpios", self.dts)
+        voice = self.node("&uart4")
+        self.assertIn('status = "okay";', voice)
+        self.assertIn("pinctrl-0 = <&uart4m1_xfer>;", voice)
+        # UART2 M1 is owned by the FIQ recovery console.
+        self.assertIn('status = "disabled";', self.node("&uart2"))
 
     def test_gd32_mcu_interface_nodes(self):
         # RV_HOLD lets the SoC take over VCC5V0_SYS from the companion MCU.
-        self.assertIn("mcu_control {", self.dts)
-        self.assertIn('label = "rv-hold";', self.dts)
-        self.assertIn("gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;", self.dts)
-        # RECOVERY is surfaced as a KEY_VENDOR gpio-key.
-        self.assertIn("gpio-keys {", self.dts)
-        self.assertIn('label = "recovery";', self.dts)
-        self.assertIn("linux,code = <KEY_VENDOR>;", self.dts)
-        self.assertIn("gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;", self.dts)
-        self.assertIn("debounce-interval = <100>;", self.dts)
-        # GPIO4_C0 is taken over from the EVB SARADC volume keys.
-        self.assertIn('adc-keys {\n\t\tstatus = "disabled";', self.dts)
+        hold = self.node("rv_hold")
+        self.assertIn('label = "rv-hold";', hold)
+        self.assertIn("gpios = <&gpio1 RK_PD1 GPIO_ACTIVE_HIGH>;", hold)
+        self.assertIn('default-state = "on";', hold)
+        mcu_uart = self.node("&uart5")
+        self.assertIn('status = "okay";', mcu_uart)
+        self.assertIn("pinctrl-0 = <&uart5m1_xfer>;", mcu_uart)
+        # UART3 M1 RX shares GPIO1_D1 with RV_HOLD.
+        self.assertIn('status = "disabled";', self.node("&uart3"))
+        self.assertNotIn("uart3m1_xfer", self.dts)
 
-    def test_uart3_m1_uses_soc_function_index(self):
-        # RV1106 selects UART3_M1 on GPIO1_D0/D1 with function index 5.
-        self.assertIn(
-            "<1 RK_PD0 5 &pcfg_pull_none>,\n\t\t\t\t/* gpio1_d1 -> UART3_RX_M1 */\n\t\t\t\t<1 RK_PD1 5 &pcfg_pull_none>;",
-            self.dts,
-        )
+    def test_recovery_key_keeps_its_gpio(self):
+        recovery = self.node("recovery")
+        self.assertIn('label = "recovery";', recovery)
+        self.assertIn("linux,code = <KEY_VENDOR>;", recovery)
+        self.assertIn("gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;", recovery)
+        self.assertIn("debounce-interval = <100>;", recovery)
+        self.assertIn('status = "disabled";', self.node("adc-keys"))
 
 
 if __name__ == "__main__":
