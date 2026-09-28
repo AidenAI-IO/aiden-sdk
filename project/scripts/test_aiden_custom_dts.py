@@ -167,6 +167,15 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("regulator-always-on;", supply)
         self.assertNotIn("gpio =", supply)
 
+    def test_aic8800_submakes_inherit_rockchip_platform(self):
+        makefile = (ROOT / "sysdrv/drv_ko/wifi/aic8800dc/Makefile").read_text()
+        # The child BSP/FDRV Makefiles default to Ubuntu when these variables
+        # are not exported by the parent recursive build.
+        self.assertIn("export CONFIG_PLATFORM_ROCKCHIP CONFIG_PLATFORM_ROCKCHIP2", makefile)
+        self.assertIn("CONFIG_PLATFORM_UBUNTU", makefile)
+        self.assertIn("CONFIG_PLATFORM_ROCKCHIP = y", makefile)
+        self.assertIn("CONFIG_PLATFORM_UBUNTU = n", makefile)
+
     def test_aic8800d80_sdio_driver_path(self):
         makefile = WIFI_MAKEFILE.read_text()
         loader = WIFI_LOADER.read_text()
