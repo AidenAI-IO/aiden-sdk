@@ -125,24 +125,19 @@
 	};
 
 	/*
-	 * MCU owns WIFI_VCC_PWREN (p1). Linux controls WL_EN on pin 3.
-	 * AIC's ROCKCHIP backend relies on MMC enumeration for power-up.
+	 * MCU owns WIFI_VCC_PWREN (p1). WL_EN (module pin 12) has an
+	 * external pull-up to V_WIFI_1V8 on SCH v1. Do not bind a Linux
+	 * mmc-pwrseq reset GPIO here: a failed probe must not leave WL_EN
+	 * asserted low and keep the module disabled on subsequent attempts.
 	 */
-	sdio_pwrseq: sdio-pwrseq {
-		compatible = "mmc-pwrseq-simple";
-		pinctrl-names = "default";
-		pinctrl-0 = <&wifi_enable>;
-		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;
-		post-power-on-delay-ms = <200>;
-	};
 
 	wireless_bluetooth: wireless-bluetooth {
 		compatible = "bluetooth-platdata";
 		BT,wake_gpio = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
 		/* BT_WAKE_MCU terminates at the MCU, not an RV1106 IRQ. */
 		status = "okay";
-	};
 
+	};
 	/*
 	 * GD32L235 companion MCU interface.
 	 *
@@ -288,7 +283,6 @@
 	supports-sdio;
 	vmmc-supply = <&v_wifi_vcc>; /* MCU-controlled supply */
 	vqmmc-supply = <&vcc_1v8>;
-	mmc-pwrseq = <&sdio_pwrseq>;
 	no-sd;
 	no-mmc;
 	pinctrl-names = "default";
@@ -527,11 +521,6 @@
 
 /**************************** PINCTRL ******************************/
 &pinctrl {
-	sdio-pwrseq {
-		wifi_enable: wifi-enable {
-			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
 	rk628 {
 		rk628_power_pin: rk628-power-pin {
 			rockchip,pins = <1 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;

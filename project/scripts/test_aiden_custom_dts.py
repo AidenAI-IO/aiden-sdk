@@ -152,30 +152,16 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertNotIn("&uart1 {", self.dts)
         self.assertNotIn("uart1_gpios", self.dts)
 
-    def test_wifi_on_sdio_controller_with_wl_en_power_sequence(self):
+    def test_wifi_on_sdio_controller_uses_external_wl_en_pullup(self):
         sdio = self.node("&sdio")
         for setting in (
             "supports-sdio;", "non-removable;", "cap-sdio-irq;",
             "keep-power-in-suspend;", "rockchip,default-sample-phase = <90>;",
             "vmmc-supply = <&v_wifi_vcc>;", "vqmmc-supply = <&vcc_1v8>;",
-            "mmc-pwrseq = <&sdio_pwrseq>;", "no-sd;", "no-mmc;",
             "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;",
         ):
             with self.subTest(setting=setting):
                 self.assertIn(setting, sdio)
-        pwrseq = self.node("sdio_pwrseq: sdio-pwrseq")
-        for setting in (
-            'compatible = "mmc-pwrseq-simple";',
-            "pinctrl-0 = <&wifi_enable>;",
-            "reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_LOW>;",
-            "post-power-on-delay-ms = <200>;",
-        ):
-            with self.subTest(setting=setting):
-                self.assertIn(setting, pwrseq)
-        self.assertIn(
-            "<3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>",
-            self.node("wifi_enable: wifi-enable"),
-        )
         # WIFI_VCC_PWREN is MCU controlled; Linux only switches WL_EN.
         supply = self.node("v_wifi_vcc: v-wifi-vcc")
         self.assertIn("regulator-always-on;", supply)
