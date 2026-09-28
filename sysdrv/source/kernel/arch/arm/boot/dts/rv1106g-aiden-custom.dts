@@ -286,7 +286,7 @@
 	no-sd;
 	no-mmc;
 	pinctrl-names = "default";
-	pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;
+	pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4 &wifi_enable>;
 	status = "okay";
 };
 
@@ -521,6 +521,11 @@
 
 /**************************** PINCTRL ******************************/
 &pinctrl {
+	wifi {
+		wifi_enable: wifi-enable {
+			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
 	rk628 {
 		rk628_power_pin: rk628-power-pin {
 			rockchip,pins = <1 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
