@@ -60,6 +60,9 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("export RK_ENABLE_WIFI_CHIP=AIC8800D80", text)
         self.assertIn("rv1106-sdiowifi.config", text)
 
+    def test_poweroff_does_not_restart(self):
+        self.assertNotIn("restart-poweroff", self.dts)
+
     def test_power_management_i2c_nodes(self):
         # Charger and fuel gauge are both on the MCU's bus. The old RV1106
         # I2C1 M1 binding also steals Bluetooth UART0 RX/TX.

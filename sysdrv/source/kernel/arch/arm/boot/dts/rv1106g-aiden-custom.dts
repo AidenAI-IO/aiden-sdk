@@ -23,10 +23,6 @@
 		bootargs = "root=/dev/mmcblk0p7 rootwait snd_soc_core.prealloc_buffer_size_kbytes=16 coherent_pool=0";
 	};
 
-	restart-poweroff {
-		compatible = "restart-poweroff";
-	};
-
 	reserved_memory: reserved-memory {
 		status = "okay";
 		#address-cells = <1>;
