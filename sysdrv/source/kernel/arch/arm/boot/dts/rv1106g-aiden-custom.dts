@@ -269,6 +269,8 @@
 
 /**********SDIO-WIFI (SKI.WB800D80S.1 / AIC8800D80)**********/
 &sdio {
+	/* The companion MCU retains module power across RV1106 resets. */
+	aiden,aic8800d80-retained-sdio;
 	max-frequency = <50000000>;
 	bus-width = <4>;
 	non-removable;
@@ -282,7 +284,7 @@
 	no-sd;
 	no-mmc;
 	pinctrl-names = "default";
-	pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4 &wifi_enable>;
+	pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;
 	status = "okay";
 };
 
@@ -517,6 +519,9 @@
 
 /**************************** PINCTRL ******************************/
 &pinctrl {
+	/* Keep WL_EN passive and independent of the SDIO host lifetime. */
+	pinctrl-names = "default";
+	pinctrl-0 = <&wifi_enable>;
 	wifi {
 		wifi_enable: wifi-enable {
 			rockchip,pins = <3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>;
