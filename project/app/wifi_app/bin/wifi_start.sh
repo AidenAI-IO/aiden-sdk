@@ -3,6 +3,12 @@ WIFISSID=$1
 WIFIPWD=$2
 CONF=/tmp/wpa_supplicant.conf
 
+is_aic8800_sdio()
+{
+	grep -Eiq 'C8A1:(C08D|0082)' \
+		/sys/bus/sdio/devices/*/uevent 2>/dev/null
+}
+
 echo "connect to WiFi ssid: $WIFISSID"
 
 cat > $CONF <<EOF
@@ -52,8 +58,7 @@ if [ $? -eq 0 ];then
 	wpa_supplicant -B -D nl80211 -i wlan0 -c $CONF
 fi
 
-#aic8800
-cat /sys/bus/sdio/devices/*/uevent | grep "C8A1:C18D"
-if [ $? -eq 0 ];then
+# AIC8800DC/D80 SDIO combo modules
+if is_aic8800_sdio; then
 	wpa_supplicant -B -D nl80211 -i wlan0 -c $CONF
 fi

@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# WiFi optimization for AIC8800DC on Luckfox Pico Zero
-# - Switch to onboard PCB antenna via GPIO123
+# WiFi optimization for the onboard AIC8800 SDIO combo module
+# - Switch to the onboard PCB antenna via the board-specific GPIO123 wiring
 # - Disable WiFi power save to prevent connectivity degradation
 #
 

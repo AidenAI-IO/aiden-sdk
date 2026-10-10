@@ -5,6 +5,15 @@ cd $_DIR
 
 export PATH=$PATH:/oem/usr/ko/
 
+# AIC8800 SDIO IDs used by the DC/DW and D80 families.  Keep this
+# descriptor-based check in one place so the loader does not depend on the
+# board model string.
+is_aic8800_sdio()
+{
+	grep -Eiq 'C8A1:(C08D|0082)' \
+		/sys/bus/sdio/devices/*/uevent 2>/dev/null
+}
+
 #for fastboot
 #insmod_wifi.ko ${RK_ENABLE_WIFI_CHIP} ${RK_ENABLE_FASTBOOT}
 if [ "${1}"x = "y"x ]; then
@@ -106,9 +115,9 @@ if [ $? -eq 0 ]; then
 	insmod atbm603x_.ko
 fi
 
-#aic8800
-if [ -n "$(cat /proc/device-tree/model | grep "W")" ] || \
-[ -n "$(cat /sys/bus/sdio/devices/*/uevent | grep "C8A1\:C18D")" ]; then
+# AIC8800DC/D80 SDIO combo modules.  D80 uses C8A1:0082; retain the
+# legacy DC IDs for existing boards.
+if grep -q "W" /proc/device-tree/model 2>/dev/null || is_aic8800_sdio; then
 	insmod cfg80211.ko
 	insmod libarc4.ko
 	insmod ctr.ko
