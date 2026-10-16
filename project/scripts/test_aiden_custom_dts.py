@@ -135,8 +135,28 @@ class AidenCustomBoardTest(unittest.TestCase):
         self.assertIn("vmmc-supply = <&vcc3v3_sd>;", sdmmc)
         self.assertIn("cd-gpios = <&gpio3 RK_PA1 GPIO_ACTIVE_LOW>;", sdmmc)
         self.assertIn(
-            "pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_bus4>;", sdmmc
+            "pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_bus4 &sdmmc0_card_detect>;", sdmmc
         )
+        for setting in (
+            'pinctrl-names = "default", "normal", "idle";',
+            "pinctrl-1 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_bus4 &sdmmc0_card_detect>;",
+            "pinctrl-2 = <&sdmmc0_idle_pins &sdmmc0_card_detect>;",
+            "max-frequency = <25000000>;",
+            "bus-width = <1>;",
+            "vqmmc-supply = <&vcc_3v3>;",
+            "no-sdio;", "no-mmc;",
+        ):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, sdmmc)
+        self.assertIn(
+            "<3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>",
+            self.node("sdmmc0_card_detect: sdmmc0-card-detect"),
+        )
+        supply = self.node("vcc3v3_sd: vcc3v3-sd-regulator")
+        self.assertIn("startup-delay-us = <10000>;", supply)
+        self.assertIn("off-on-delay-us = <200000>;", supply)
+        self.assertNotIn("regulator-always-on;", supply)
+        self.assertNotIn("rockchip,tf-diagnostics", sdmmc)
         # Card detect stays in GPIO mode, not SDMMC hardware-detect mode.
         self.assertNotIn("sdmmc0_det", self.dts)
 
@@ -161,7 +181,7 @@ class AidenCustomBoardTest(unittest.TestCase):
             "supports-sdio;", "non-removable;", "cap-sdio-irq;",
             "keep-power-in-suspend;", "rockchip,default-sample-phase = <90>;",
             "vmmc-supply = <&v_wifi_vcc>;", "vqmmc-supply = <&vcc_1v8>;",
-            "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4 &wifi_enable>;",
+            "pinctrl-0 = <&sdmmc1m0_cmd &sdmmc1m0_clk &sdmmc1m0_bus4>;",
         ):
             with self.subTest(setting=setting):
                 self.assertIn(setting, sdio)
