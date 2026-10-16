@@ -588,6 +588,10 @@ static int rkcif_output_fmt_check(struct rkcif_stream *stream,
 	struct csi_channel_info *channel = &stream->cifdev->channels[stream->id];
 	int ret = -EINVAL;
 
+	/* An async endpoint can exist before its upstream bridge is ready. */
+	if (!input_fmt)
+		return -ENODEV;
+
 	switch (input_fmt->mbus_code) {
 	case MEDIA_BUS_FMT_YUYV8_2X8:
 	case MEDIA_BUS_FMT_YVYU8_2X8:

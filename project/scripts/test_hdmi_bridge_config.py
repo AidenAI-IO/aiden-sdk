@@ -10,10 +10,10 @@ TC358743_DRIVER = ROOT / "sysdrv/source/kernel/drivers/media/i2c/tc358743.c"
 
 
 class HdmiBridgeConfigTest(unittest.TestCase):
-    def test_both_hdmi_bridge_drivers_are_built_in(self):
+    def test_rk628_driver_is_enabled_and_tc358743_is_disabled(self):
         text = KERNEL_FRAGMENT.read_text()
         self.assertIn("CONFIG_VIDEO_RK628_CSI=y", text)
-        self.assertIn("CONFIG_VIDEO_TC358743=y", text)
+        self.assertIn("# CONFIG_VIDEO_TC358743 is not set", text)
         self.assertIn("# CONFIG_VIDEO_TC358743_CEC is not set", text)
 
     def test_both_i2c_bridges_are_declared(self):

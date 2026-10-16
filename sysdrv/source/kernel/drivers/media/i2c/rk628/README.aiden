@@ -1,0 +1,29 @@
+RK628F backport for Aiden SCH v1
+==============================
+
+Source: https://github.com/rockchip-linux/kernel
+Branch: develop-5.10
+Commit: 81417fbf13edb25f203ea794a723b8bf1f457d5c
+Directory: drivers/media/i2c/rk628
+Dependency: include/uapi/linux/rk_hdmirx_config.h
+
+The original BSP driver only implements RK628D. Aiden silicon reports
+0x20230321 at GRF_SOC_VERSION (0x0200), identifying RK628F. Backport the
+coherent receiver, CRU, MIPI PHY and post-processing implementation together.
+
+Local integration differences:
+- Expose optional attributes on the I2C device, without a newer global
+  Rockchip HDMI class dependency.
+- Omit the external RKCIF soft-reset hook unavailable in this BSP. Bridge
+  CSI recovery remains enabled. RKCIF is a separate loadable module.
+- Retain Aiden's two-block digital HDMI 1080p60 EDID.
+- Serialize userspace EDID updates and restart receiver training afterwards.
+- Return ENOLCK for absent video instead of reporting fallback VGA timings.
+- Guard optional IRQs, retain V4L2 client data, lock control updates and
+  observe live AVI readiness during polling.
+- Retry failed receiver training every 10 seconds without a plugin GPIO.
+  SCH v1 routes Plugin_DET to the MCU; no RV1106 GPIO is invented here.
+
+The DTS retains the onboard 24 MHz oscillator, GPIO1_A0 power enable,
+active-low GPIO1_A1 reset, GPIO1_B1 IRQ and four continuous-clock CSI lanes.
+No GPIO override is used for HDMI HPD.
