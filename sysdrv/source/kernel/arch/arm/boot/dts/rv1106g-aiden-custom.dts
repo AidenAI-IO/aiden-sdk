@@ -522,6 +522,7 @@
 /* GD32L235 LPUART1: GPIO1_D2/D3, pins 86/85. */
 &uart5 {
 	status = "okay";
+	wakeup-source;
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart5m1_xfer>;
 };

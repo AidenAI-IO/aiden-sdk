@@ -506,6 +506,12 @@ static int cmd_mgr_msgind(struct rwnx_cmd_mgr *cmd_mgr,
 	}
 	spin_unlock_bh(&cmd_mgr->lock);
 
+#ifdef AICWF_LATENCY_MODE
+	if (msg->id == ME_SET_LP_LEVEL_CFM)
+		pr_info("aic8800_fdrv: ME_SET_LP_LEVEL_CFM received (id=0x%04x, matched=%u, len=%u)\n",
+			msg->id, found, msg->param_len);
+#endif
+
 	if (!found)
 		cmd_mgr_run_callback(rwnx_hw, NULL, msg, cb);
 

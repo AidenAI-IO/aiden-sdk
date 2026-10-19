@@ -961,6 +961,9 @@ static int rwnx_open(struct net_device *dev)
 	u8 rwnx_rx_gain = 0x0E;
 	int err = 0;
 	int waiting_counter = 10;
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+	bool started_here = false;
+#endif
 
 	RWNX_DBG(RWNX_FN_ENTRY_STR);
 
@@ -976,14 +979,6 @@ static int rwnx_open(struct net_device *dev)
 		}
 	}
 
-#ifdef AICWF_LATENCY_MODE
-	if ((testmode == 0) &&
-	    (RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_STATION ||
-	     RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_P2P_CLIENT)) {
-		rwnx_send_me_set_lp_level(rwnx_hw, 1, 1);
-	}
-#endif
-
 #ifdef CONFIG_GPIO_WAKEUP
 //close lp mode
 //	rwnx_send_me_set_lp_level(g_rwnx_plat->sdiodev->rwnx_hw, 0);
@@ -995,6 +990,9 @@ static int rwnx_open(struct net_device *dev)
 		error = rwnx_send_start(rwnx_hw);
 		if (error)
 			return error;
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+		started_here = true;
+#endif
 
 		if (rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DC ||
 		    rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DW) {
@@ -1013,6 +1011,34 @@ static int rwnx_open(struct net_device *dev)
 
 		/* Device is now started */
 	}
+
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+	/* Queue after firmware start, before publishing a started interface. */
+	if (!testmode && rwnx_hw->mod_params->lp_on &&
+	    RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_STATION) {
+		error = rwnx_send_me_set_lp_level(rwnx_hw, 1, 1);
+		if (error) {
+			netdev_err(dev, "firmware low-power request failed: %d\n",
+				   error);
+			/* Undo our MAC start without resetting any existing VIF. */
+			if (started_here) {
+				err = rwnx_send_reset(rwnx_hw);
+				if (!err)
+					err = rwnx_send_me_config_req(rwnx_hw);
+				if (!err)
+					err = rwnx_send_me_chan_config_req(
+						rwnx_hw, country_code);
+				if (err)
+					netdev_err(dev,
+						   "firmware rollback failed: %d; reload driver before retrying\n",
+						   err);
+			}
+			return error;
+		}
+		netdev_info(dev,
+			    "firmware low-power level 1 submitted (packet filtering disabled)\n");
+	}
+#endif
 
 	set_bit(RWNX_DEV_STARTED, &rwnx_vif->drv_flags);
 	rwnx_set_conn_state(&rwnx_vif->drv_conn_state,
