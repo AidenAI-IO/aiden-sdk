@@ -539,11 +539,13 @@ static void rk628_hdmirx_plugout(struct v4l2_subdev *sd)
 
 static void rk628_hdmirx_config_all(struct v4l2_subdev *sd)
 {
-	int ret, delay;
+	int ret, delay, ced_status;
 	struct rk628_csi *csi = to_csi(sd);
 
 	ret = rk628_hdmirx_phy_setup(sd);
-	if (ret == LOCK_OK && !rk628_hdmirx_scdc_ced_err(csi->rk628)) {
+	/* Reading CED also updates the counters and equalizer; sample it once. */
+	ced_status = rk628_hdmirx_scdc_ced_err(csi->rk628);
+	if (ret == LOCK_OK && ced_status == CED_OK) {
 		ret = rk628_csi_format_change(sd);
 		if (ret == LOCK_OK) {
 			csi->lock_fail_time = 0;
@@ -552,7 +554,7 @@ static void rk628_hdmirx_config_all(struct v4l2_subdev *sd)
 		}
 	}
 
-	if (ret == LOCK_RESET || rk628_hdmirx_scdc_ced_err(csi->rk628)) {
+	if (ret == LOCK_RESET || ced_status != CED_OK) {
 		rk628_csi_hdmirx_reset(sd);
 		rk628_hdmirx_hpd_ctrl(sd, true);
 		schedule_delayed_work(&csi->delayed_work_enable_hotplug,
@@ -1015,10 +1017,13 @@ static void enable_stream(struct v4l2_subdev *sd, bool en)
 			return;
 		}
 
-		if (rk628_hdmirx_scdc_ced_err(csi->rk628) == CED_FULL) {
-			rk628_hdmirx_plugout(sd);
+		/* CED reads can retune EQ; stream start must only observe locks. */
+		if (csi->rk628->version >= RK628F_VERSION && !rk628_csi_rx_locked(sd)) {
+			csi->nosignal = true;
+			rk628_csi_enable_interrupts(sd, false);
+			rk628_csi_hdmirx_reset(sd);
 			schedule_delayed_work(&csi->delayed_work_enable_hotplug,
-					      msecs_to_jiffies(800));
+					      msecs_to_jiffies(100));
 			return;
 		}
 
@@ -1445,9 +1450,11 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 	struct rk628_csi *csi = to_csi(sd);
 	int ret = 0, ced_status, retry_cnt;
 	bool force_eq = csi->rk628->force_eq;
+	bool retry_eq;
 
 	retry_cnt = csi->rk628->dynamic_eq ? RXPHY_CFG_MAX_TIMES_DYNAMIC_EQ : RXPHY_CFG_MAX_TIMES;
 	for (i = 0; i < retry_cnt; i++) {
+		retry_eq = false;
 		if (csi->rk628->version < RK628F_VERSION) {
 			ret = rk628_hdmirx_inno_phy_power_on(sd);
 		} else {
@@ -1485,18 +1492,24 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 			if (ced_status == CED_FULL)
 				return LOCK_RESET;
 
-			if (ced_status == CED_ERR && csi->rk628->dynamic_eq)
-				force_eq = true;
-
 			if (!tx_5v_power_present(sd)) {
 				v4l2_info(sd, "HDMI pull out, return!\n");
 				return LOCK_FAIL;
 			}
+			if (ced_status == CED_ERR && csi->rk628->dynamic_eq) {
+				force_eq = true;
+				retry_eq = true;
+				break;
+			}
 
 			if (cnt >= 15)
 				break;
-		} while (((status & 0xfff) < 0xd00) || force_eq ||
+		} while (((status & 0xfff) < 0xd00) ||
 				(!rk628_rcv_supported_res(sd, width, height)));
+
+		/* A later CED read must not erase an EQ change in this attempt. */
+		if (retry_eq)
+			continue;
 
 		if (((status & 0xfff) < 0xf00) ||
 				(!rk628_rcv_supported_res(sd, width, height))) {
@@ -1506,8 +1519,13 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 		} else {
 			if (csi->rk628->version >= RK628F_VERSION)
 				rk628_hdmirx_phy_prepclk_cfg(csi->rk628);
-			if (rk628_hdmirx_scdc_ced_err(csi->rk628) == CED_OK)
+			ced_status = rk628_hdmirx_scdc_ced_err(csi->rk628);
+			if (ced_status == CED_FULL)
+				return LOCK_RESET;
+			if (ced_status == CED_OK)
 				break;
+			if (csi->rk628->dynamic_eq)
+				force_eq = true;
 		}
 	}
 
@@ -2188,15 +2206,29 @@ static inline unsigned int fps_calc(const struct v4l2_bt_timings *t)
 static int rk628_csi_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct rk628_csi *csi = to_csi(sd);
+	int ret = 0;
 
+	/* Receiver recovery and CSI setup must not reset each other's state. */
+	mutex_lock(&csi->confctl_mutex);
+	if (enable && (!tx_5v_power_present(sd) || csi->nosignal)) {
+		ret = -ENOLCK;
+		goto unlock;
+	}
 	enable_stream(sd, enable);
+	if (enable && (csi->nosignal ||
+	    (csi->rk628->tx_mode == CSI_MODE && !csi->is_streaming))) {
+		enable_stream(sd, false);
+		ret = -EAGAIN;
+	}
 
 	v4l2_info(sd, "%s: on: %d, %dx%d@%d\n", __func__, enable,
 				csi->timings.bt.width,
 				csi->timings.bt.height,
 				fps_calc(&csi->timings.bt));
 
-	return 0;
+unlock:
+	mutex_unlock(&csi->confctl_mutex);
+	return ret;
 }
 
 static int rk628_csi_enum_mbus_code(struct v4l2_subdev *sd,
@@ -2311,15 +2343,16 @@ static int rk628_csi_get_fmt(struct v4l2_subdev *sd,
 	u32 rate;
 	int index;
 
+	mutex_lock(&csi->confctl_mutex);
 	if (!tx_5v_power_present(sd) || csi->nosignal) {
 		v4l2_info(sd, "%s hdmirx no signal\n", __func__);
 		format->format.code = csi->mbus_fmt_code;
 		format->format.width = RK628_DEFAULT_WIDTH;
 		format->format.height = RK628_DEFAULT_HEIGHT;
 		format->format.field = V4L2_FIELD_NONE;
+		mutex_unlock(&csi->confctl_mutex);
 		return 0;
 	}
-	mutex_lock(&csi->confctl_mutex);
 	format->format.code = csi->mbus_fmt_code;
 	format->format.width = ALIGN_DOWN(csi->timings.bt.width, 8);
 	format->format.height = csi->timings.bt.height;

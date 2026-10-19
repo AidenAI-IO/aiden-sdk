@@ -32,7 +32,20 @@ Local integration differences:
   Serialize mask updates with the threaded HDMI handler using an IRQ mutex.
 - Return EAGAIN from timing queries while receiver configuration is busy,
   instead of blocking userspace on the recovery mutex.
+- Serialize stream transitions and format readiness with receiver recovery.
+  Reject unavailable or interrupted stream starts and disable partial CSI
+  setup before returning an error to the capture pipeline.
+- Sample CED once per receiver configuration so updating its error baseline
+  cannot suppress the retry required after an equalizer adjustment.
+- Check live receiver locks at stream start without sampling CED. CED reads
+  can change EQ based on historical idle errors and disrupt a locked input.
+  Keep EQ changes in receiver training, where they receive a PHY retry.
+- Preserve an EQ change during PHY setup until another PHY attempt runs;
+  a later clean counter sample cannot make the earlier attempt ready.
 
 The DTS retains the onboard 24 MHz oscillator, GPIO1_A0 power enable,
 active-low GPIO1_A1 reset, GPIO1_B1 IRQ and four continuous-clock CSI lanes.
+Enable the upstream dynamic-eq option on the Type-C bridge path so TMDS
+character errors can retune the receiver equalizer instead of repeatedly
+retraining with the same unsuitable setting.
 No GPIO override is used for HDMI HPD.
