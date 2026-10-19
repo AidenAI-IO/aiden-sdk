@@ -89,6 +89,13 @@ struct rk628_csi {
 	struct timer_list timer;
 	struct work_struct work_i2c_poll;
 	struct mutex confctl_mutex;
+	/* Protect receiver IRQ state; never acquire confctl_mutex under this. */
+	struct mutex irq_mutex;
+	/* Last configured input; timing queries also update src_timings. */
+	struct v4l2_dv_timings configured_timings;
+	u8 configured_format;
+	u8 configured_range;
+	u8 configured_space;
 	struct rkmodule_multi_dev_info multi_dev_info;
 	const struct rk628_csi_mode *cur_mode;
 	const char *module_facing;
@@ -360,6 +367,7 @@ static void rk628_post_process_setup(struct v4l2_subdev *sd);
 static void rk628_csi_enable_interrupts(struct v4l2_subdev *sd, bool en);
 static void rk628_csi_enable_csi_interrupts(struct v4l2_subdev *sd, bool en);
 static void rk628_csi_clear_csi_interrupts(struct v4l2_subdev *sd);
+static void rk628_csi_clear_hdmirx_interrupts(struct v4l2_subdev *sd);
 static int rk628_csi_s_ctrl_detect_tx_5v(struct v4l2_subdev *sd);
 static int rk628_csi_s_dv_timings(struct v4l2_subdev *sd,
 				 struct v4l2_dv_timings *timings);
@@ -590,6 +598,25 @@ static void rk628_csi_delayed_work_enable_hotplug(struct work_struct *work)
 	mutex_unlock(&csi->confctl_mutex);
 }
 
+static bool rk628_csi_rx_locked(struct v4l2_subdev *sd)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u32 val;
+	int i;
+
+	/* F channel-lock bits can briefly drop while the clock stays stable. */
+	for (i = 0; i < 5; i++) {
+		if (rk628_i2c_read(csi->rk628, HDMI_RX_SCDC_REGS1, &val))
+			return false;
+		if ((val & 0xf00) == 0xf00)
+			return true;
+		if (i < 4)
+			usleep_range(20000, 21000);
+	}
+	v4l2_dbg(1, debug, sd, "receiver lock lost: SCDC_REGS1=%#x\n", val);
+	return false;
+}
+
 static int rk628_check_resulotion_change(struct v4l2_subdev *sd)
 {
 	u32 val;
@@ -598,8 +625,33 @@ static int rk628_check_resulotion_change(struct v4l2_subdev *sd)
 	u32 old_htotal, old_vtotal;
 	struct v4l2_bt_timings *bt = &csi->src_timings.bt;
 
-	if (csi->rk628->version >= RK628F_VERSION)
-		return 1;
+	if (csi->rk628->version >= RK628F_VERSION) {
+		struct v4l2_dv_timings timings;
+		bool changed;
+
+		/*
+		 * The F receiver can raise VACT changes while its line counter
+		 * settles, even with an unchanged AVI mode and a locked PHY.
+		 * Resetting on every such edge prevents capture from ever starting.
+		 * Check the current link and decoded timings after the debounce.
+		 */
+		if (!rk628_csi_rx_locked(sd) ||
+		    rk628_hdmirx_get_timings(csi->rk628, &timings))
+			return 1;
+		if (!rk628_csi_rx_locked(sd))
+			return 1;
+
+		changed = !v4l2_match_dv_timings(&csi->configured_timings, &timings,
+				div_u64(csi->configured_timings.bt.pixelclock, 1000), false) ||
+		       csi->configured_format != csi->rk628->color_format ||
+		       csi->configured_range != csi->rk628->color_range ||
+		       csi->configured_space != csi->rk628->color_space;
+		v4l2_dbg(1, debug, sd, "debounced input: changed=%d, clock=%llu->%llu, color=%u/%u/%u->%u/%u/%u\n",
+			 changed, csi->configured_timings.bt.pixelclock, timings.bt.pixelclock,
+			 csi->configured_format, csi->configured_range, csi->configured_space,
+			 csi->rk628->color_format, csi->rk628->color_range, csi->rk628->color_space);
+		return changed;
+	}
 
 	rk628_i2c_read(csi->rk628, HDMI_RX_MD_HT1, &val);
 	htotal = (val >> 16) & 0xffff;
@@ -625,16 +677,29 @@ static void rk628_delayed_work_res_change(struct work_struct *work)
 			delayed_work_res_change);
 	struct v4l2_subdev *sd = &csi->sd;
 	bool plugin;
+	bool changed;
+	const struct v4l2_event evt_signal_lost = {
+		.type = RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST,
+	};
 
 	mutex_lock(&csi->confctl_mutex);
+	plugin = tx_5v_power_present(sd);
+	changed = !plugin || rk628_check_resulotion_change(sd);
+	if (csi->rk628->version >= RK628F_VERSION && !changed) {
+		/* Preserve a working stream when only the measurement jittered. */
+		rk628_csi_enable_interrupts(sd, true);
+		mutex_unlock(&csi->confctl_mutex);
+		return;
+	}
+	if (csi->rk628->version >= RK628F_VERSION && sd->devnode)
+		v4l2_event_queue(sd->devnode, &evt_signal_lost);
 	rk628_set_bg_enable(csi->rk628, false);
 	enable_stream(sd, false);
 	csi->nosignal = true;
 	csi->avi_rcv_rdy = false;
-	plugin = tx_5v_power_present(sd);
 	v4l2_dbg(1, debug, sd, "%s: 5v_det:%d\n", __func__, plugin);
 	if (plugin) {
-		if (rk628_check_resulotion_change(sd)) {
+		if (changed) {
 			v4l2_dbg(1, debug, sd, "res change, recfg ctrler and phy!\n");
 			if (csi->rk628->version >= RK628F_VERSION) {
 				rk628_csi_enable_interrupts(sd, false);
@@ -1468,11 +1533,11 @@ static void rk628_csi_initial(struct v4l2_subdev *sd)
 	rk628_i2c_write(csi->rk628, GRF_GPIO0AB_SEL_CON, HIWORD_UPDATE(0x1, 3, 3));
 	/* I2SM0D0 */
 	rk628_i2c_write(csi->rk628, GRF_GPIO0AB_SEL_CON, HIWORD_UPDATE(0x1, 5, 4));
-	/* hdmirx int en */
+	/* Keep receiver IRQs masked until training and leaf masks are ready. */
 	if (csi->rk628->version >= RK628F_VERSION)
-		rk628_i2c_write(csi->rk628, GRF_INTR0_EN, 0x02000200);
+		rk628_i2c_write(csi->rk628, GRF_INTR0_EN, 0x02000000);
 	else
-		rk628_i2c_write(csi->rk628, GRF_INTR0_EN, 0x01000100);
+		rk628_i2c_write(csi->rk628, GRF_INTR0_EN, 0x01000000);
 
 	udelay(10);
 	rk628_control_assert(csi->rk628, RGU_HDMIRX);
@@ -1558,6 +1623,10 @@ static int rk628_csi_format_change(struct v4l2_subdev *sd)
 				&timings, false);
 	}
 
+	csi->configured_timings = csi->src_timings;
+	csi->configured_format = csi->rk628->color_format;
+	csi->configured_range = csi->rk628->color_range;
+	csi->configured_space = csi->rk628->color_space;
 	if (sd->devnode)
 		v4l2_subdev_notify_event(sd, &rk628_csi_ev_fmt);
 
@@ -1609,11 +1678,22 @@ static void rk628_csi_enable_csi_interrupts(struct v4l2_subdev *sd, bool en)
 	}
 }
 
-static void rk628_csi_enable_interrupts(struct v4l2_subdev *sd, bool en)
+/* Caller holds irq_mutex, including when called from the threaded handler. */
+static void rk628_csi_enable_interrupts_locked(struct v4l2_subdev *sd, bool en)
 {
 	u32 pdec_ien, md_ien;
 	u32 pdec_mask = 0, md_mask = 0;
 	struct rk628_csi *csi = to_csi(sd);
+	u32 irq_mask = csi->rk628->version >= RK628F_VERSION ? BIT(9) : BIT(8);
+
+	/*
+	 * Mask the parent before touching leaf sources. Otherwise a pending
+	 * receiver IRQ can continuously retrigger while vid_ints_en is false,
+	 * monopolizing I2C and preventing the recovery worker from proceeding.
+	 * Keep the independent CSI interrupt routing unchanged.
+	 */
+	rk628_i2c_write(csi->rk628, GRF_INTR0_EN, irq_mask << 16);
+	csi->vid_ints_en = false;
 
 	pdec_mask = AVI_RCV_ENSET | AVI_CKS_CHG_ICLR;
 	md_mask = VACT_LIN_ENSET | HACT_PIX_ENSET | HS_CLK_ENSET |
@@ -1625,17 +1705,30 @@ static void rk628_csi_enable_interrupts(struct v4l2_subdev *sd, bool en)
 	if (en) {
 		rk628_i2c_write(csi->rk628, HDMI_RX_MD_IEN_SET, md_mask);
 		rk628_i2c_write(csi->rk628, HDMI_RX_PDEC_IEN_SET, pdec_mask);
-		csi->vid_ints_en = true;
 	} else {
 		rk628_i2c_write(csi->rk628, HDMI_RX_MD_IEN_CLR, md_mask);
 		rk628_i2c_write(csi->rk628, HDMI_RX_PDEC_IEN_CLR, pdec_mask);
 		rk628_i2c_write(csi->rk628, HDMI_RX_AUD_FIFO_IEN_CLR, 0x1f);
-		csi->vid_ints_en = false;
+	}
+	rk628_csi_clear_hdmirx_interrupts(sd);
+	if (en) {
+		csi->vid_ints_en = true;
+		rk628_i2c_write(csi->rk628, GRF_INTR0_EN,
+				(irq_mask << 16) | irq_mask);
 	}
 	usleep_range(5000, 5000);
 	rk628_i2c_read(csi->rk628, HDMI_RX_MD_IEN, &md_ien);
 	rk628_i2c_read(csi->rk628, HDMI_RX_PDEC_IEN, &pdec_ien);
 	v4l2_dbg(1, debug, sd, "%s MD_IEN:%#x, PDEC_IEN:%#x\n", __func__, md_ien, pdec_ien);
+}
+
+static void rk628_csi_enable_interrupts(struct v4l2_subdev *sd, bool en)
+{
+	struct rk628_csi *csi = to_csi(sd);
+
+	mutex_lock(&csi->irq_mutex);
+	rk628_csi_enable_interrupts_locked(sd, en);
+	mutex_unlock(&csi->irq_mutex);
 }
 
 static void rk628_csi_clear_csi_interrupts(struct v4l2_subdev *sd)
@@ -1773,13 +1866,9 @@ static int rk628_hdmirx_general_isr(struct v4l2_subdev *sd, u32 status, bool *ha
 
 	v4l2_dbg(1, debug, sd, "%s: int0 status: 0x%x\n", __func__, int0_status);
 
-	if (csi->rk628->version >= RK628F_VERSION &&
-	    rk628_hdmirx_is_signal_change_ists(csi->rk628, md_ints, pdec_ints))
-		rk628_set_bg_enable(csi->rk628, true);
-
 	plugin = tx_5v_power_present(sd);
 	if (!plugin) {
-		rk628_csi_enable_interrupts(sd, false);
+		rk628_csi_enable_interrupts_locked(sd, false);
 		return 0;
 	}
 
@@ -1809,12 +1898,14 @@ static int rk628_hdmirx_general_isr(struct v4l2_subdev *sd, u32 status, bool *ha
 		v4l2_dbg(1, debug, sd, "%s: HACT:%#x, VACT:%#x\n",
 			 __func__, hact, vact);
 
-		rk628_csi_enable_interrupts(sd, false);
-		if (csi->rk628->version < RK628F_VERSION)
+		rk628_csi_enable_interrupts_locked(sd, false);
+		if (csi->rk628->version < RK628F_VERSION) {
 			enable_stream(sd, false);
-		csi->nosignal = true;
-		if (sd->devnode)
-			v4l2_event_queue(sd->devnode, &evt_signal_lost);
+			csi->nosignal = true;
+			if (sd->devnode)
+				v4l2_event_queue(sd->devnode, &evt_signal_lost);
+		}
+		/* F receivers validate the change before disturbing the stream. */
 		schedule_delayed_work(&csi->delayed_work_res_change, msecs_to_jiffies(100));
 
 		v4l2_dbg(1, debug, sd, "%s: hact/vact change, md_ints: %#x\n",
@@ -1843,11 +1934,13 @@ static int rk628_hdmirx_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 {
 	struct rk628_csi *csi = to_csi(sd);
 
+	mutex_lock(&csi->irq_mutex);
 	rk628_hdmirx_general_isr(sd, status, handled);
 	if (csi->cec_enable && csi->cec)
 		rk628_hdmirx_cec_irq(csi->rk628, csi->cec);
 
 	rk628_csi_clear_hdmirx_interrupts(sd);
+	mutex_unlock(&csi->irq_mutex);
 
 	return 0;
 }
@@ -2015,12 +2108,17 @@ static int rk628_csi_query_dv_timings(struct v4l2_subdev *sd,
 	int ret;
 	struct rk628_csi *csi = to_csi(sd);
 
+	/* Recovery can take seconds; a readiness probe must not wait for it. */
+	if (!mutex_trylock(&csi->confctl_mutex)) {
+		memset(timings, 0, sizeof(*timings));
+		return -EAGAIN;
+	}
 	if (!tx_5v_power_present(sd) || csi->nosignal) {
 		memset(timings, 0, sizeof(*timings));
-		return -ENOLCK;
+		ret = -ENOLCK;
+	} else {
+		ret = rk628_csi_get_detected_timings(sd, timings);
 	}
-	mutex_lock(&csi->confctl_mutex);
-	ret = rk628_csi_get_detected_timings(sd, timings);
 	mutex_unlock(&csi->confctl_mutex);
 	if (ret)
 		return ret;
@@ -3617,6 +3715,7 @@ static int rk628_csi_probe(struct i2c_client *client,
 	}
 
 	mutex_init(&csi->confctl_mutex);
+	mutex_init(&csi->irq_mutex);
 	INIT_WORK(&csi->work_i2c_poll, rk628_csi_work_i2c_poll);
 	timer_setup(&csi->timer, rk628_csi_irq_poll_timer, 0);
 
@@ -3772,6 +3871,7 @@ err_work_queues:
 	cancel_delayed_work_sync(&csi->delayed_work_res_change);
 	rk628_hdmirx_audio_destroy(csi->audio_info);
 err_hdl:
+	mutex_destroy(&csi->irq_mutex);
 	mutex_destroy(&csi->confctl_mutex);
 	media_entity_cleanup(&sd->entity);
 	v4l2_ctrl_handler_free(&csi->hdl);
@@ -3821,6 +3921,7 @@ static int rk628_csi_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&csi->hdl);
 
 
+	mutex_destroy(&csi->irq_mutex);
 	mutex_destroy(&csi->confctl_mutex);
 
 	rk628_csi_power_off(csi);

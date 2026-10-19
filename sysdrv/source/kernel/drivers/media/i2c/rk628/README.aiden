@@ -23,6 +23,15 @@ Local integration differences:
   observe live AVI readiness during polling.
 - Retry failed receiver training every 10 seconds without a plugin GPIO.
   SCH v1 routes Plugin_DET to the MCU; no RV1106 GPIO is invented here.
+- Debounce F receiver timing interrupts against the last configured input,
+  including link lock and color metadata, before stopping a working stream.
+  Ignore unchanged-mode measurement jitter with 0.1% pixel-clock tolerance.
+  Retry transient channel-lock drops over 80 ms before declaring signal loss.
+- Mask the parent HDMI interrupt while changing leaf masks or recovering;
+  publish readiness before unmasking it, preserving independent CSI routing.
+  Serialize mask updates with the threaded HDMI handler using an IRQ mutex.
+- Return EAGAIN from timing queries while receiver configuration is busy,
+  instead of blocking userspace on the recovery mutex.
 
 The DTS retains the onboard 24 MHz oscillator, GPIO1_A0 power enable,
 active-low GPIO1_A1 reset, GPIO1_B1 IRQ and four continuous-clock CSI lanes.
