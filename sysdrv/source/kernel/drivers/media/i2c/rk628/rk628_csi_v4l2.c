@@ -2666,6 +2666,7 @@ static void rk628_reset_edid(struct v4l2_subdev *sd, u8 *edid_data, u8 edid_vers
 	struct rk628_csi *csi = to_csi(sd);
 	struct v4l2_subdev_edid def_edid;
 
+	mutex_lock(&csi->confctl_mutex);
 	rk628_hdmirx_plugout(&csi->sd);
 	def_edid.pad = 0;
 	def_edid.start_block = 0;
@@ -2673,6 +2674,7 @@ static void rk628_reset_edid(struct v4l2_subdev *sd, u8 *edid_data, u8 edid_vers
 	def_edid.edid = edid_data;
 	csi->edid_version = edid_version;
 	rk628_csi_s_edid(sd, &def_edid);
+	mutex_unlock(&csi->confctl_mutex);
 	schedule_delayed_work(&csi->delayed_work_enable_hotplug,
 			      msecs_to_jiffies(1000));
 }
