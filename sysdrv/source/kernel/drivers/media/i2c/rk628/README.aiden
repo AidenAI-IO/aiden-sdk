@@ -32,6 +32,8 @@ Local integration differences:
   Serialize mask updates with the threaded HDMI handler using an IRQ mutex.
 - Return EAGAIN from timing queries while receiver configuration is busy,
   instead of blocking userspace on the recovery mutex.
+- Log timing-query MIPI mode selection only at debug level. Routine readiness
+  queries repeat this selection even when the input and transport are unchanged.
 - Serialize stream transitions and format readiness with receiver recovery.
   Reject unavailable or interrupted stream starts and disable partial CSI
   setup before returning an error to the capture pipeline.

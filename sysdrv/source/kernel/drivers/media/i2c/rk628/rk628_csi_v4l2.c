@@ -489,10 +489,10 @@ static int rk628_csi_get_detected_timings(struct v4l2_subdev *sd,
 
 	if ((bt->pixelclock > 300000000 && csi->rk628->version >= RK628F_VERSION) ||
 		(bt->width > 2048 && csi->rk628->tx_mode == DSI_MODE)) {
-		v4l2_info(sd, "rk628f detect pixclk more than 300M, use dual mipi mode\n");
+		v4l2_dbg(1, debug, sd, "rk628f detect pixclk more than 300M, use dual mipi mode\n");
 		csi->rk628->dual_mipi = true;
 	} else {
-		v4l2_info(sd, "pixclk less than 300M, use single mipi mode\n");
+		v4l2_dbg(1, debug, sd, "pixclk less than 300M, use single mipi mode\n");
 		csi->rk628->dual_mipi = false;
 	}
 
