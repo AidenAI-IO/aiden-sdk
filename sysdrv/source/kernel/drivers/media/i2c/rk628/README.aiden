@@ -32,6 +32,9 @@ Local integration differences:
   Serialize mask updates with the threaded HDMI handler using an IRQ mutex.
 - Return EAGAIN from timing queries while receiver configuration is busy,
   instead of blocking userspace on the recovery mutex.
+- Require live clock and data-channel lock around every F receiver timing
+  sample. AVI mode lookup can otherwise report stable 1080p60 after pixel
+  transport has lost lock. Clear failed timing results and preserve I2C errors.
 - Log timing-query MIPI mode selection only at debug level. Routine readiness
   queries repeat this selection even when the input and transport are unchanged.
 - Serialize stream transitions and format readiness with receiver recovery.
