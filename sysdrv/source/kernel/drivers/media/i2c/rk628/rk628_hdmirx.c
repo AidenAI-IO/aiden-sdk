@@ -1953,18 +1953,42 @@ bool rk628_hdmirx_tx_5v_power_detect(struct gpio_desc *det_gpio)
 }
 EXPORT_SYMBOL(rk628_hdmirx_tx_5v_power_detect);
 
+static int rk628_hdmirx_check_lock(struct rk628 *rk628)
+{
+	u32 status;
+	int ret;
+
+	if (rk628->version < RK628F_VERSION)
+		return 0;
+
+	ret = rk628_i2c_read(rk628, HDMI_RX_SCDC_REGS1, &status);
+	if (ret)
+		return ret;
+
+	return (status & 0xf00) == 0xf00 ? 0 : -ENOLCK;
+}
+
 static int rk628_hdmirx_try_to_get_timing(struct rk628 *rk628,
 					  struct v4l2_dv_timings *timings)
 {
 	int ret, i;
 
 	for (i = 0; i < 5; i++) {
+		/* AVI VIC timings alone remain valid after the data channels unlock. */
+		ret = rk628_hdmirx_check_lock(rk628);
+		if (ret)
+			break;
 		ret = rk628_hdmirx_read_timing(rk628, timings);
-		if (!ret)
-			return ret;
+		if (!ret) {
+			ret = rk628_hdmirx_check_lock(rk628);
+			if (!ret)
+				return 0;
+			break;
+		}
 		msleep(20);
 	}
 
+	memset(timings, 0, sizeof(*timings));
 	return ret;
 }
 
@@ -1983,7 +2007,8 @@ int rk628_hdmirx_get_timings(struct rk628 *rk628,
 	for (i = 0; i < HDMIRX_GET_TIMING_CNT; i++) {
 		if (!rk628_hdmirx_tx_5v_power_detect(rk628->hdmirx_det_gpio)) {
 			dev_info(rk628->dev, "%s: hdmi plug out!\n", __func__);
-			return -EINVAL;
+			memset(timings, 0, sizeof(*timings));
+			return -ENOLCK;
 		}
 
 		ret = rk628_hdmirx_try_to_get_timing(rk628, timings);
@@ -1993,8 +2018,9 @@ int rk628_hdmirx_get_timings(struct rk628 *rk628,
 			last_fmt = rk628_hdmirx_get_format(rk628);
 		}
 
-		if (ret && i > 2)
-			return -EINVAL;
+		/* Let transient lock loss settle without counting it as stable video. */
+		if (ret && ret != -ENOLCK)
+			return ret;
 
 		if (ret || (last_w != bt->width) || (last_h != bt->height)
 		    || (last_fmt != rk628_hdmirx_get_format(rk628)))
@@ -2013,7 +2039,8 @@ int rk628_hdmirx_get_timings(struct rk628 *rk628,
 
 	if (cnt < 8) {
 		dev_info(rk628->dev, "%s: res not stable!\n", __func__);
-		ret = -EINVAL;
+		memset(timings, 0, sizeof(*timings));
+		ret = -ENOLCK;
 	}
 
 	return ret;

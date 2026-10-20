@@ -6403,6 +6403,7 @@ int rkcif_do_start_stream(struct rkcif_stream *stream, enum rkcif_stream_mode mo
 	int ret;
 	int i = 0;
 	u32 skip_frame = 0;
+	bool tasklet_enabled = false;
 
 	v4l2_info(&dev->v4l2_dev, "stream[%d] start streaming\n", stream->id);
 
@@ -6507,8 +6508,10 @@ int rkcif_do_start_stream(struct rkcif_stream *stream, enum rkcif_stream_mode mo
 	}
 	mutex_unlock(&hw_dev->dev_lock);
 
-	if (mode == RKCIF_STREAM_MODE_CAPTURE)
+	if (mode == RKCIF_STREAM_MODE_CAPTURE) {
 		tasklet_enable(&stream->vb_done_tasklet);
+		tasklet_enabled = true;
+	}
 
 	if (stream->cur_stream_mode == RKCIF_STREAM_MODE_NONE) {
 		ret = dev->pipe.open(&dev->pipe, &node->vdev.entity, true);
@@ -6601,7 +6604,8 @@ pipe_stream_off:
 	dev->pipe.set_stream(&dev->pipe, false);
 
 destroy_buf:
-	if (mode == RKCIF_STREAM_MODE_CAPTURE)
+	/* Early failures must not add another disable to the idle tasklet. */
+	if (tasklet_enabled)
 		tasklet_disable(&stream->vb_done_tasklet);
 	if (stream->curr_buf)
 		list_add_tail(&stream->curr_buf->queue, &stream->buf_head);
