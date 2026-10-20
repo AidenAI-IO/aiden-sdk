@@ -121,8 +121,8 @@ CONFIG_SDIO_PWRCTRL ?= y
 CONFIG_GPIO_WAKEUP ?= n
 CONFIG_AUTO_POWERSAVE = n
 
-# Enable wifi-hal Latency Mode
-CONFIG_AICWF_LATENCY_MODE = n
+# Expose the vendor low-power control; automatic activation is opt-in (lp_on).
+CONFIG_AICWF_LATENCY_MODE = y
 
 ifneq ($(CONFIG_WIRELESS_EXT), y)
 CONFIG_USE_WIRELESS_EXT = n

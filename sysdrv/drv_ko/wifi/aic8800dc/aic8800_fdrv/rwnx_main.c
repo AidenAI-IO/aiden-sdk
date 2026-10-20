@@ -961,6 +961,9 @@ static int rwnx_open(struct net_device *dev)
 	u8 rwnx_rx_gain = 0x0E;
 	int err = 0;
 	int waiting_counter = 10;
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+	bool started_here = false;
+#endif
 
 	RWNX_DBG(RWNX_FN_ENTRY_STR);
 
@@ -976,14 +979,6 @@ static int rwnx_open(struct net_device *dev)
 		}
 	}
 
-#ifdef AICWF_LATENCY_MODE
-	if ((testmode == 0) &&
-	    (RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_STATION ||
-	     RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_P2P_CLIENT)) {
-		rwnx_send_me_set_lp_level(rwnx_hw, 1, 1);
-	}
-#endif
-
 #ifdef CONFIG_GPIO_WAKEUP
 //close lp mode
 //	rwnx_send_me_set_lp_level(g_rwnx_plat->sdiodev->rwnx_hw, 0);
@@ -995,6 +990,9 @@ static int rwnx_open(struct net_device *dev)
 		error = rwnx_send_start(rwnx_hw);
 		if (error)
 			return error;
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+		started_here = true;
+#endif
 
 		if (rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DC ||
 		    rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DW) {
@@ -1013,6 +1011,34 @@ static int rwnx_open(struct net_device *dev)
 
 		/* Device is now started */
 	}
+
+#if defined(AICWF_LATENCY_MODE) && defined(AICWF_SDIO_SUPPORT)
+	/* Queue after firmware start, before publishing a started interface. */
+	if (!testmode && rwnx_hw->mod_params->lp_on &&
+	    RWNX_VIF_TYPE(rwnx_vif) == NL80211_IFTYPE_STATION) {
+		error = rwnx_send_me_set_lp_level(rwnx_hw, 1, 1);
+		if (error) {
+			netdev_err(dev, "firmware low-power request failed: %d\n",
+				   error);
+			/* Undo our MAC start without resetting any existing VIF. */
+			if (started_here) {
+				err = rwnx_send_reset(rwnx_hw);
+				if (!err)
+					err = rwnx_send_me_config_req(rwnx_hw);
+				if (!err)
+					err = rwnx_send_me_chan_config_req(
+						rwnx_hw, country_code);
+				if (err)
+					netdev_err(dev,
+						   "firmware rollback failed: %d; reload driver before retrying\n",
+						   err);
+			}
+			return error;
+		}
+		netdev_info(dev,
+			    "firmware low-power level 1 submitted (packet filtering disabled)\n");
+	}
+#endif
 
 	set_bit(RWNX_DEV_STARTED, &rwnx_vif->drv_flags);
 	rwnx_set_conn_state(&rwnx_vif->drv_conn_state,
@@ -5522,20 +5548,24 @@ int rwnx_ic_system_init(struct rwnx_hw *rwnx_hw)
 {
 	u32 mem_addr;
 	struct dbg_mem_read_cfm rd_mem_addr_cfm;
+	int ret;
 
 	mem_addr = 0x40500000;
 
 	//	if(rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DC ||
 	//		rwnx_hw->sdiodev->chipid == PRODUCT_ID_AIC8800DW){
-	if (rwnx_send_dbg_mem_read_req(rwnx_hw, mem_addr, &rd_mem_addr_cfm)) {
-		return -1;
+	ret = rwnx_send_dbg_mem_read_req(rwnx_hw, mem_addr, &rd_mem_addr_cfm);
+	if (ret) {
+		AICWFDBG(LOGERROR, "[0x40500000] rd fail: %d\n", ret);
+		return ret;
 	}
 
 	chip_id = (u8)(rd_mem_addr_cfm.memdata >> 16);
 
-	if (rwnx_send_dbg_mem_read_req(rwnx_hw, 0x00000020, &rd_mem_addr_cfm)) {
-		AICWFDBG(LOGERROR, "[0x00000020] rd fail\n");
-		return -1;
+	ret = rwnx_send_dbg_mem_read_req(rwnx_hw, 0x00000020, &rd_mem_addr_cfm);
+	if (ret) {
+		AICWFDBG(LOGERROR, "[0x00000020] rd fail: %d\n", ret);
+		return ret;
 	}
 	chip_sub_id = (u8)(rd_mem_addr_cfm.memdata);
 
@@ -5706,7 +5736,7 @@ int rwnx_cfg80211_init(struct rwnx_plat *rwnx_plat, void **platform_data)
 	u8 dflt_mac[ETH_ALEN] = { 0x88, 0x00, 0x33, 0x77, 0x10, 0x99 };
 	u8 addr_str[20];
 	//struct mm_set_rf_calib_cfm cfm;
-	struct mm_get_fw_version_cfm fw_version;
+	struct mm_get_fw_version_cfm fw_version = { 0 };
 	u8_l mac_addr_efuse[ETH_ALEN];
 	struct aicbsp_feature_t feature;
 	struct mm_set_stack_start_cfm set_start_cfm;
@@ -5753,6 +5783,7 @@ int rwnx_cfg80211_init(struct rwnx_plat *rwnx_plat, void **platform_data)
 #endif
 	rwnx_hw->mod_params = &rwnx_mod_params;
 	rwnx_hw->tcp_pacing_shift = 7;
+	tasklet_init(&rwnx_hw->task, rwnx_task, (unsigned long)rwnx_hw);
 
 #ifdef CONFIG_SCHED_SCAN
 	rwnx_hw->is_sched_scan = false;
@@ -5825,6 +5856,7 @@ int rwnx_cfg80211_init(struct rwnx_plat *rwnx_plat, void **platform_data)
 	if (!rwnx_hw->apmStaloss_wq) {
 		txrx_err(
 			"insufficient memory to create apmStaloss workqueue.\n");
+		ret = -ENOMEM;
 		goto err_cache;
 	}
 
@@ -5869,9 +5901,16 @@ int rwnx_cfg80211_init(struct rwnx_plat *rwnx_plat, void **platform_data)
 				       feature.hwinfo;
 
 	ret = rwnx_send_get_fw_version_req(rwnx_hw, &fw_version);
-	memcpy(wiphy->fw_version, fw_version.fw_version,
-	       fw_version.fw_version_len > 32 ? 32 : fw_version.fw_version_len);
-	AICWFDBG(LOGINFO, "Firmware Version: %s\r\n", fw_version.fw_version);
+	if (ret)
+		goto err_lmac_reqs;
+	if (fw_version.fw_version_len > sizeof(fw_version.fw_version)) {
+		ret = -EPROTO;
+		goto err_lmac_reqs;
+	}
+	scnprintf(wiphy->fw_version, sizeof(wiphy->fw_version), "%.*s",
+		  (int)fw_version.fw_version_len, fw_version.fw_version);
+	AICWFDBG(LOGINFO, "Firmware Version: %.*s\r\n",
+		 (int)fw_version.fw_version_len, fw_version.fw_version);
 
 	wiphy->bands[NL80211_BAND_2GHZ] = &rwnx_band_2GHz;
 	if (rwnx_hw->band_5g_support)
@@ -5955,8 +5994,6 @@ int rwnx_cfg80211_init(struct rwnx_plat *rwnx_plat, void **platform_data)
 	wiphy->max_match_sets = SCAN_SSID_MAX; //16;
 	wiphy->max_sched_scan_ie_len = 2048;
 #endif //CONFIG_SCHED_SCAN
-
-	tasklet_init(&rwnx_hw->task, rwnx_task, (unsigned long)rwnx_hw);
 
 	//init ic rf
 	if ((ret = rwnx_ic_rf_init(rwnx_hw))) {
@@ -6139,11 +6176,22 @@ err_debugfs:
 err_register_wiphy:
 err_lmac_reqs:
 	printk("err_lmac_reqs\n");
-	rwnx_platform_off(rwnx_hw, NULL);
-	//err_platon:
-	//err_config:
-	kmem_cache_destroy(rwnx_hw->sw_txhdr_cache);
 err_cache:
+#ifdef AICWF_SDIO_SUPPORT
+	/* Stop callbacks and bus threads before their rwnx_hw is freed. */
+	rwnx_hw->plat->enabled = false;
+	aicwf_sdio_abort_init(rwnx_hw->sdiodev);
+	rwnx_hw->sdiodev->rwnx_hw = NULL;
+#endif
+	rwnx_platform_off(rwnx_hw, NULL);
+	if (rwnx_hw->apmStaloss_wq)
+		destroy_workqueue(rwnx_hw->apmStaloss_wq);
+	if (rwnx_hw->sw_txhdr_cache) {
+#ifdef CONFIG_FILTER_TCP_ACK
+		tcp_ack_deinit(rwnx_hw);
+#endif
+		kmem_cache_destroy(rwnx_hw->sw_txhdr_cache);
+	}
 	aicwf_wakeup_lock_deinit(rwnx_hw);
 	wiphy_free(wiphy);
 err_out:

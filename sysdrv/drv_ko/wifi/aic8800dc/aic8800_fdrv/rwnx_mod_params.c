@@ -29,6 +29,7 @@
 
 struct rwnx_mod_params rwnx_mod_params = {
 	/* common parameters */
+	COMMON_PARAM(lp_on, false, false)
 	COMMON_PARAM(ht_on, true, true) COMMON_PARAM(vht_on, true, true) COMMON_PARAM(
 		he_on, true,
 		true) COMMON_PARAM(mcs_map, IEEE80211_VHT_MCS_SUPPORT_0_9,
@@ -138,6 +139,12 @@ MODULE_PARM_DESC(
 
 module_param_named(ps_on, rwnx_mod_params.ps_on, bool, S_IRUGO);
 MODULE_PARM_DESC(ps_on, "Enable PowerSaving (Default: 1-Enabled)");
+
+#ifdef AICWF_LATENCY_MODE
+module_param_named(lp_on, rwnx_mod_params.lp_on, bool, S_IRUGO);
+MODULE_PARM_DESC(lp_on,
+		 "Request firmware low-power level 1 on STA open, without packet filtering (Default: 0)");
+#endif
 
 module_param_named(tx_lft, rwnx_mod_params.tx_lft, int, 0644);
 MODULE_PARM_DESC(tx_lft, "Tx lifetime (ms) - setting it to 0 disables retries "

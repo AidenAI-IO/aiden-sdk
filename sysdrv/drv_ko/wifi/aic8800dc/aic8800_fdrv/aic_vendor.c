@@ -9,6 +9,7 @@
 #include <linux/rtnetlink.h>
 #include <net/netlink.h>
 #include "rwnx_version_gen.h"
+#include "rwnx_main.h"
 #include "rwnx_msg_tx.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
@@ -716,34 +717,41 @@ static int aicwf_vendor_subcmd_set_latency_mode(struct wiphy *wiphy,
 						struct wireless_dev *wdev,
 						const void *data, int len)
 {
-	int err = 0, rem, type;
-	u32 latency_mode;
+	int rem, err;
+	u32 latency_mode = 0;
+	bool found = false;
 	const struct nlattr *iter;
 	struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
 
-	nla_for_each_attr (iter, data, len, rem) {
-		type = nla_type(iter);
-		switch (type) {
-		case ANDR_WIFI_ATTRIBUTE_LATENCY_MODE:
-			latency_mode = nla_get_u32(iter);
-			printk("%s,Setting latency mode %d\n", __func__,
-			       latency_mode);
-#ifdef AICWF_SDIO_SUPPORT
-			if (latency_mode) {
-				rwnx_send_me_set_lp_level(rwnx_hw, 0, 1);
-			} else {
-				rwnx_send_me_set_lp_level(rwnx_hw, 1, 0);
-			}
-#endif
-			break;
-		default:
-			pr_err("%s(%d), Unknown type: %d\n", __func__, __LINE__,
-			       type);
-			return err;
-		}
-	}
+	if (!data || len <= 0)
+		return -EINVAL;
+	if (!wdev || !wdev->netdev || !netif_running(wdev->netdev))
+		return -ENETDOWN;
+	if (testmode || wdev->iftype != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
 
+	/* Validate the complete request before changing firmware state. */
+	nla_for_each_attr(iter, data, len, rem) {
+		if (nla_type(iter) != ANDR_WIFI_ATTRIBUTE_LATENCY_MODE ||
+		    nla_len(iter) != sizeof(u32) || found)
+			return -EINVAL;
+		latency_mode = nla_get_u32(iter);
+		found = true;
+	}
+	if (rem || !found || latency_mode > 1)
+		return -EINVAL;
+
+#ifdef AICWF_SDIO_SUPPORT
+	/* Retain normal packet delivery; suspend-only filtering is not enabled. */
+	err = rwnx_send_me_set_lp_level(rwnx_hw, !latency_mode, 1);
+	if (!err)
+		netdev_info(wdev->netdev,
+			    "firmware low-power level %u submitted (packet filtering disabled)\n",
+			    !latency_mode);
 	return err;
+#else
+	return -EOPNOTSUPP;
+#endif
 }
 #endif
 
@@ -1229,8 +1237,8 @@ const struct wiphy_vendor_command aicwf_vendor_cmd[] = {
 	  .flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 	  .doit = aicwf_vendor_subcmd_set_latency_mode,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
-	  .policy = aicwf_cfg80211_andr_wifi_policy,
-	  .maxattr = ANDR_WIFI_ATTRIBUTE_MAX
+	  /* iw sends raw vendor data; the handler validates its inner attribute. */
+	  .policy = VENDOR_CMD_RAW_DATA,
 #endif /* LINUX_VERSION >= 5.3 */
 	},
 #endif

@@ -13,6 +13,11 @@ CONFIG_PLATFORM_ROCKCHIP2 = n
 CONFIG_PLATFORM_ALLWINNER = n
 CONFIG_PLATFORM_AMLOGIC = n
 CONFIG_PLATFORM_UBUNTU = n
+# The BSP and FDRV directories have their own Makefiles and are built as
+# recursive sub-makes by the kernel kbuild. Export the selected platform so
+# their ?= defaults cannot silently select the host Ubuntu implementation.
+export CONFIG_PLATFORM_ROCKCHIP CONFIG_PLATFORM_ROCKCHIP2 \
+	CONFIG_PLATFORM_ALLWINNER CONFIG_PLATFORM_AMLOGIC CONFIG_PLATFORM_UBUNTU
 
 MAKEFLAGS +=-j$(shell nproc)
 

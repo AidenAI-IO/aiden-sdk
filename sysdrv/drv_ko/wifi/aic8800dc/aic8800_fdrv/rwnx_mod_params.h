@@ -45,6 +45,7 @@ struct rwnx_mod_params {
 	bool listen_bcmc;
 	int lp_clk_ppm;
 	bool ps_on;
+	bool lp_on;
 	int tx_lft;
 	int amsdu_maxnb;
 	int uapsd_queues;
