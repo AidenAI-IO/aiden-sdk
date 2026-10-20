@@ -16,9 +16,11 @@ Local integration differences:
   Rockchip HDMI class dependency.
 - Omit the external RKCIF soft-reset hook unavailable in this BSP. Bridge
   CSI recovery remains enabled. RKCIF is a separate loadable module.
-- Use Aiden's two-block digital HDMI 1080p30 EDID. The onboard Type-C
-  bridge path loses HDMI data-channel lock at 148.5 MHz with the tested
-  Android source; 74.25 MHz preserves full resolution with stable transport.
+- Default to Aiden's two-block digital HDMI 1080p60 EDID. Userspace can
+  persistently select 1080p30 for sources that lose data-channel lock at
+  148.5 MHz; this retains full resolution at a 74.25 MHz pixel clock.
+- Serialize EDID reads with receiver recovery and writes. Return EAGAIN
+  during configuration and propagate I2C errors instead of returning bad data.
 - Serialize userspace EDID updates and restart receiver training afterwards.
 - Return ENOLCK for absent video instead of reporting fallback VGA timings.
 - Guard optional IRQs, retain V4L2 client data, lock control updates and
