@@ -35,6 +35,9 @@ Local integration differences:
 - Serialize stream transitions and format readiness with receiver recovery.
   Reject unavailable or interrupted stream starts and disable partial CSI
   setup before returning an error to the capture pipeline.
+- Propagate CSI PHY lock and lane stop-state polling errors through STREAMON.
+  Keep streaming/power state clear on failure and disable partial setup before
+  returning the original error so capture can retry.
 - Sample CED once per receiver configuration so updating its error baseline
   cannot suppress the retry required after an equalizer adjustment.
 - Do not sample CED at stream start. CED reads can change EQ based on

@@ -379,9 +379,9 @@ static int rk628_hdmirx_inno_phy_power_on(struct v4l2_subdev *sd);
 static int rk628_hdmirx_inno_phy_power_off(struct v4l2_subdev *sd);
 static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd);
 static int rk628_csi_format_change(struct v4l2_subdev *sd);
-static void enable_stream(struct v4l2_subdev *sd, bool enable);
+static int enable_stream(struct v4l2_subdev *sd, bool enable);
 static void rk628_hdmirx_vid_enable(struct v4l2_subdev *sd, bool en);
-static void rk628_csi_set_csi(struct v4l2_subdev *sd);
+static int rk628_csi_set_csi(struct v4l2_subdev *sd);
 static void rk628_hdmirx_hpd_ctrl(struct v4l2_subdev *sd, bool en);
 static bool rk628_rcv_supported_res(struct v4l2_subdev *sd, u32 width,
 				    u32 height);
@@ -537,6 +537,13 @@ static void rk628_hdmirx_plugout(struct v4l2_subdev *sd)
 	mipi_dphy_power_off(csi);
 }
 
+/**
+ * rk628_hdmirx_config_all - train the receiver and publish input readiness
+ * @sd: receiver subdevice
+ *
+ * The caller holds confctl_mutex. Reuse one CED observation for readiness and
+ * retry decisions because observing CED can update the counters and equalizer.
+ */
 static void rk628_hdmirx_config_all(struct v4l2_subdev *sd)
 {
 	int ret, delay, ced_status;
@@ -829,11 +836,18 @@ static void rk628_csi_soft_reset(struct v4l2_subdev *sd)
 		rk628_i2c_write(csi->rk628, CSITX1_SYS_CTRL0_IMD, 0x0);
 }
 
-static void enable_csitx(struct v4l2_subdev *sd)
+/**
+ * enable_csitx - configure and enable the CSI transmitter
+ * @sd: receiver subdevice
+ *
+ * Return: 0 on success or the CSI setup error. The caller unwinds failed setup.
+ */
+static int enable_csitx(struct v4l2_subdev *sd)
 {
 	struct rk628_csi *csi = to_csi(sd);
 	u32 mask = SW_OUTPUT_MODE_MASK;
 	u32 val = SW_OUTPUT_MODE(OUTPUT_MODE_CSI);
+	int ret;
 
 	if (csi->rk628->version == RK628F_VERSION) {
 		mask = SW_OUTPUT_COMBTX_MODE_MASK;
@@ -849,7 +863,9 @@ static void enable_csitx(struct v4l2_subdev *sd)
 	rk628_i2c_update_bits(csi->rk628, GRF_POST_PROC_CON, SW_SPLIT_EN,
 			     csi->rk628->dual_mipi ? SW_SPLIT_EN : 0);
 	csi->rk628->enable_csi1 = csi->rk628->dual_mipi;
-	rk628_csi_set_csi(sd);
+	ret = rk628_csi_set_csi(sd);
+	if (ret)
+		return ret;
 
 	rk628_csi_soft_reset(sd);
 	usleep_range(5000, 5500);
@@ -884,6 +900,7 @@ static void enable_csitx(struct v4l2_subdev *sd)
 		rk628_i2c_write(csi->rk628, CSITX1_CONFIG_DONE, CONFIG_DONE_IMD);
 	}
 	csi->is_streaming = true;
+	return 0;
 }
 
 static void rk628_dsi_set_scs(struct rk628_csi *csi)
@@ -1006,23 +1023,37 @@ static void rk628_csi_disable_stream(struct v4l2_subdev *sd)
 	csi->is_streaming = false;
 }
 
-static void enable_stream(struct v4l2_subdev *sd, bool en)
+/**
+ * enable_stream - change output streaming without retuning the receiver
+ * @sd: receiver subdevice
+ * @en: whether to start streaming
+ *
+ * Return: 0 on success, -ENOLCK for unavailable input, or the CSI setup error.
+ * Failed CSI setup is disabled before returning the error.
+ */
+static int enable_stream(struct v4l2_subdev *sd, bool en)
 {
 	struct rk628_csi *csi = to_csi(sd);
+	int ret;
 
 	v4l2_dbg(1, debug, sd, "%s: %sable\n", __func__, en ? "en" : "dis");
 	if (en) {
 		if (!tx_5v_power_present(sd) || csi->nosignal) {
 			v4l2_err(sd, "%s: hdmi no signal or unplug!\n", __func__);
-			return;
+			return -ENOLCK;
 		}
 
 		/* EQ changes belong to receiver training, not stream transitions. */
 
 		if (csi->rk628->tx_mode == DSI_MODE)
 			enable_dsitx(sd);
-		else
-			enable_csitx(sd);
+		else {
+			ret = enable_csitx(sd);
+			if (ret) {
+				enable_stream(sd, false);
+				return ret;
+			}
+		}
 
 		rk628_hdmirx_vid_enable(sd, true);
 		if (csi->rk628->tx_mode == CSI_MODE &&
@@ -1048,6 +1079,7 @@ static void enable_stream(struct v4l2_subdev *sd, bool en)
 			rk628_disable_dsitx(sd);
 		}
 	}
+	return 0;
 }
 
 static void rk628_post_process_setup(struct v4l2_subdev *sd)
@@ -1101,14 +1133,20 @@ static void rk628_post_process_setup(struct v4l2_subdev *sd)
 	dst_bt->pixelclock = dst_pclk;
 }
 
-static void rk628_csi_set_csi(struct v4l2_subdev *sd)
+/**
+ * rk628_csi_set_csi - configure CSI format and power up its PHY
+ * @sd: receiver subdevice
+ *
+ * Return: 0 on success or a PHY error. The caller disables partial setup.
+ */
+static int rk628_csi_set_csi(struct v4l2_subdev *sd)
 {
 	struct rk628_csi *csi = to_csi(sd);
 	u8 video_fmt;
 	u8 lanes = csi->csi_lanes_in_use;
 	u8 lane_num, yc_swap;
 	u32 wc_usrdef, val, data_type, pixfmt;
-	int avi_rdy;
+	int avi_rdy, ret;
 	u32 adv_read_pld_en = 0, adv_read_pld_num = 0;
 
 	lane_num = lanes - 1;
@@ -1157,7 +1195,9 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 		csi->txphy_pwron = false;
 	}
 
-	mipi_dphy_power_on(csi);
+	ret = mipi_dphy_power_on(csi);
+	if (ret)
+		return ret;
 	csi->txphy_pwron = true;
 	v4l2_dbg(2, debug, sd, "%s: txphy power on!\n", __func__);
 	usleep_range(1000, 1500);
@@ -1333,6 +1373,7 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 		csi->nosignal = true;
 		schedule_delayed_work(&csi->delayed_work_enable_hotplug, HZ / 20);
 	}
+	return 0;
 }
 
 static int rk628_hdmirx_inno_phy_power_on(struct v4l2_subdev *sd)
@@ -2182,6 +2223,14 @@ static inline unsigned int fps_calc(const struct v4l2_bt_timings *t)
 			V4L2_DV_BT_FRAME_HEIGHT(t) * V4L2_DV_BT_FRAME_WIDTH(t));
 }
 
+/**
+ * rk628_csi_s_stream - serialize output transitions with receiver recovery
+ * @sd: receiver subdevice
+ * @enable: whether to start streaming
+ *
+ * Return: 0 on success, -ENOLCK for unavailable input, -EAGAIN for interrupted
+ * setup, or the CSI PHY error. A failed start leaves the transmitter disabled.
+ */
 static int rk628_csi_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct rk628_csi *csi = to_csi(sd);
@@ -2193,8 +2242,8 @@ static int rk628_csi_s_stream(struct v4l2_subdev *sd, int enable)
 		ret = -ENOLCK;
 		goto unlock;
 	}
-	enable_stream(sd, enable);
-	if (enable && (csi->nosignal ||
+	ret = enable_stream(sd, enable);
+	if (enable && !ret && (csi->nosignal ||
 	    (csi->rk628->tx_mode == CSI_MODE && !csi->is_streaming))) {
 		enable_stream(sd, false);
 		ret = -EAGAIN;
@@ -2314,6 +2363,14 @@ static int rk628_find_best_link_freq(u32 rate)
 	return cur_best_fit;
 }
 
+/**
+ * rk628_csi_get_fmt - report the format under the receiver configuration lock
+ * @sd: receiver subdevice
+ * @cfg: pad configuration
+ * @format: destination for the current or no-signal fallback format
+ *
+ * Return: 0 after reporting the format.
+ */
 static int rk628_csi_get_fmt(struct v4l2_subdev *sd,
 		struct v4l2_subdev_pad_config *cfg,
 		struct v4l2_subdev_format *format)
@@ -2811,9 +2868,16 @@ static long rk628_csi_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	return ret;
 }
 
+/**
+ * mipi_dphy_power_on - start the CSI PHY and verify lock and lane stop state
+ * @csi: receiver state
+ *
+ * Return: 0 when every enabled PHY is ready, or the first polling error.
+ * The caller must power down the partial setup after an error.
+ */
 static int mipi_dphy_power_on(struct rk628_csi *csi)
 {
-	unsigned int val;
+	unsigned int val = 0;
 	u32 bus_width, mask;
 	struct v4l2_subdev *sd = &csi->sd;
 	int ret;
@@ -2842,15 +2906,19 @@ static int mipi_dphy_power_on(struct rk628_csi *csi)
 				       CSITX_CSITX_STATUS1,
 				       val, val & DPHY_PLL_LOCK,
 				       0, 1000);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(csi->rk628->dev, "csi0 phy is not locked\n");
+		return ret;
+	}
 	if (csi->rk628->version >= RK628F_VERSION && csi->rk628->enable_csi1) {
 		ret = regmap_read_poll_timeout(csi->rk628->regmap[RK628_DEV_CSI1],
 				       CSITX1_CSITX_STATUS1,
 				       val, val & DPHY_PLL_LOCK,
 				       0, 1000);
-		if (ret < 0)
+		if (ret < 0) {
 			dev_err(csi->rk628->dev, "csi1 phy is not locked\n");
+			return ret;
+		}
 	}
 
 	mask = STOPSTATE_CLK | STOPSTATE_LANE0;
@@ -2858,17 +2926,21 @@ static int mipi_dphy_power_on(struct rk628_csi *csi)
 				       CSITX_CSITX_STATUS1,
 				       val, (val & mask) == mask,
 				       0, 1000);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(csi->rk628->dev, "csi0 lane module is not in stop state, val: 0x%x\n", val);
+		return ret;
+	}
 
 	if (csi->rk628->version >= RK628F_VERSION && csi->rk628->enable_csi1) {
 		ret = regmap_read_poll_timeout(csi->rk628->regmap[RK628_DEV_CSI1],
 				       CSITX1_CSITX_STATUS1,
 				       val, (val & mask) == mask,
 				       0, 1000);
-		if (ret < 0)
+		if (ret < 0) {
 			dev_err(csi->rk628->dev,
 				"csi1 lane module is not in stop state, val: 0x%x\n", val);
+			return ret;
+		}
 	}
 
 	return 0;
