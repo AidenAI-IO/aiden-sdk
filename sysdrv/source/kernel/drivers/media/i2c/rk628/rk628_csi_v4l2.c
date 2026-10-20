@@ -1017,15 +1017,7 @@ static void enable_stream(struct v4l2_subdev *sd, bool en)
 			return;
 		}
 
-		/* CED reads can retune EQ; stream start must only observe locks. */
-		if (csi->rk628->version >= RK628F_VERSION && !rk628_csi_rx_locked(sd)) {
-			csi->nosignal = true;
-			rk628_csi_enable_interrupts(sd, false);
-			rk628_csi_hdmirx_reset(sd);
-			schedule_delayed_work(&csi->delayed_work_enable_hotplug,
-					      msecs_to_jiffies(100));
-			return;
-		}
+		/* EQ changes belong to receiver training, not stream transitions. */
 
 		if (csi->rk628->tx_mode == DSI_MODE)
 			enable_dsitx(sd);
@@ -1450,11 +1442,9 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 	struct rk628_csi *csi = to_csi(sd);
 	int ret = 0, ced_status, retry_cnt;
 	bool force_eq = csi->rk628->force_eq;
-	bool retry_eq;
 
 	retry_cnt = csi->rk628->dynamic_eq ? RXPHY_CFG_MAX_TIMES_DYNAMIC_EQ : RXPHY_CFG_MAX_TIMES;
 	for (i = 0; i < retry_cnt; i++) {
-		retry_eq = false;
 		if (csi->rk628->version < RK628F_VERSION) {
 			ret = rk628_hdmirx_inno_phy_power_on(sd);
 		} else {
@@ -1492,24 +1482,18 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 			if (ced_status == CED_FULL)
 				return LOCK_RESET;
 
+			if (ced_status == CED_ERR && csi->rk628->dynamic_eq)
+				force_eq = true;
+
 			if (!tx_5v_power_present(sd)) {
 				v4l2_info(sd, "HDMI pull out, return!\n");
 				return LOCK_FAIL;
 			}
-			if (ced_status == CED_ERR && csi->rk628->dynamic_eq) {
-				force_eq = true;
-				retry_eq = true;
-				break;
-			}
 
 			if (cnt >= 15)
 				break;
-		} while (((status & 0xfff) < 0xd00) ||
+		} while (((status & 0xfff) < 0xd00) || force_eq ||
 				(!rk628_rcv_supported_res(sd, width, height)));
-
-		/* A later CED read must not erase an EQ change in this attempt. */
-		if (retry_eq)
-			continue;
 
 		if (((status & 0xfff) < 0xf00) ||
 				(!rk628_rcv_supported_res(sd, width, height))) {
@@ -1519,13 +1503,8 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 		} else {
 			if (csi->rk628->version >= RK628F_VERSION)
 				rk628_hdmirx_phy_prepclk_cfg(csi->rk628);
-			ced_status = rk628_hdmirx_scdc_ced_err(csi->rk628);
-			if (ced_status == CED_FULL)
-				return LOCK_RESET;
-			if (ced_status == CED_OK)
+			if (rk628_hdmirx_scdc_ced_err(csi->rk628) == CED_OK)
 				break;
-			if (csi->rk628->dynamic_eq)
-				force_eq = true;
 		}
 	}
 
